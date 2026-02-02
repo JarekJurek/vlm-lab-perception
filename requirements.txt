@@ -1,0 +1,9 @@
+numpy
+matplotlib
+ipykernel
+torch>=2.0.0
+transformers>=4.40.0
+Pillow
+accelerate
+peft
+bitsandbytes
