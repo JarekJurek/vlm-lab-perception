@@ -16,23 +16,17 @@ from typing import Dict, Any
 
 import torch
 from PIL import Image
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
-from labliquidvision import LabLiquidVisionDataset
+from src.labliquidvision import LabLiquidVisionDataset
 
 
-# ============================================================================
-# Configuration
-# ============================================================================
-MODEL_NAME = "Qwen/Qwen3-VL-Chat"
+MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DATA_ROOT = Path("data") / "LabLiquidVision" / "processed"
 MAX_NEW_TOKENS = 256
 
 
-# ============================================================================
-# Task Prompts
-# ============================================================================
 TASK_PROMPTS = {
     "binary_liquid": (
         "Look at this container. Does it contain any liquid? "
@@ -61,9 +55,6 @@ TASK_PROMPTS = {
 }
 
 
-# ============================================================================
-# Model Setup
-# ============================================================================
 def load_model():
     """Load Qwen3-VL model and processor."""
     print(f"Loading model: {MODEL_NAME}")
@@ -71,18 +62,15 @@ def load_model():
     
     processor = AutoProcessor.from_pretrained(MODEL_NAME)
     
-    model = Qwen3VLForConditionalGeneration.from_pretrained(
+    model = AutoModelForImageTextToText.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         device_map="auto"
     ).eval()
     
     return model, processor
 
 
-# ============================================================================
-# Inference
-# ============================================================================
 def run_task(
     model,
     processor,
@@ -102,20 +90,31 @@ def run_task(
     Returns:
         Model's text response.
     """
-    # Build content list
-    content = [{"type": "image", "image": image}]
-    
+    # Build content list (image placeholders) and images list
+    content = [{"type": "image"}]
+    images = [image]
+
     if mask is not None:
-        content.append({"type": "image", "image": mask})
+        content.append({"type": "image"})
+        images.append(mask)
         prompt = f"The second image shows the container mask.\n\n{prompt}"
-    
+
     content.append({"type": "text", "text": prompt})
-    
+
     # Build messages
     messages = [{"role": "user", "content": content}]
-    
-    # Prepare inputs
-    inputs = processor(messages, return_tensors="pt").to(model.device)
+
+    # Prepare inputs using chat template + images
+    text = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+    inputs = processor(
+        text=[text],
+        images=images,
+        return_tensors="pt"
+    ).to(model.device)
     
     # Generate
     with torch.no_grad():
@@ -141,44 +140,29 @@ def run_task(
 def test_sample(
     model,
     processor,
-    sample: Dict[str, Any],
-    use_mask: bool = True
+    sample: Dict[str, Any]
 ) -> Dict[str, str]:
     """Test all tasks on a single sample.
     
     Args:
         model: Qwen3-VL model.
         processor: Qwen3-VL processor.
-        sample: Dataset sample containing 'rgb' and optionally 'mask'.
-        use_mask: Whether to include vessel mask in prompts.
+        sample: Dataset sample containing 'rgb_image'.
     
     Returns:
         Dictionary mapping task names to model responses.
     """
-    # Convert numpy arrays to PIL Images
-    rgb_array = sample["rgb"]
-    if rgb_array.shape[0] in (1, 3, 4):  # CHW format
-        rgb_array = rgb_array.transpose(1, 2, 0)
-    
-    rgb_image = Image.fromarray(rgb_array.astype('uint8'))
-    
-    mask_image = None
-    if use_mask and "mask" in sample:
-        mask_array = sample["mask"]
-        if mask_array.ndim == 3:
-            if mask_array.shape[0] == 1:  # CHW format
-                mask_array = mask_array.transpose(1, 2, 0).squeeze(-1)
-            elif mask_array.shape[-1] == 1:
-                mask_array = mask_array.squeeze(-1)
-        # Convert to RGB for visualization
-        mask_rgb = (mask_array * 255).astype('uint8')
-        mask_image = Image.fromarray(mask_rgb).convert("RGB")
-    
+    rgb_path = sample.get("rgb_image")
+    if rgb_path is None:
+        raise FileNotFoundError("Input_RGBImage.png not found for sample.")
+
+    rgb_image = Image.open(rgb_path).convert("RGB")
+
     results = {}
     
     for task_name, prompt in TASK_PROMPTS.items():
         print(f"  Running task: {task_name}...")
-        response = run_task(model, processor, rgb_image, prompt, mask_image)
+        response = run_task(model, processor, rgb_image, prompt)
         results[task_name] = response
     
     return results
@@ -201,16 +185,13 @@ def compare_containers(
     Returns:
         Model's comparison response.
     """
-    # Convert to PIL Images
-    rgb1 = sample1["rgb"]
-    if rgb1.shape[0] in (1, 3, 4):
-        rgb1 = rgb1.transpose(1, 2, 0)
-    image1 = Image.fromarray(rgb1.astype('uint8'))
-    
-    rgb2 = sample2["rgb"]
-    if rgb2.shape[0] in (1, 3, 4):
-        rgb2 = rgb2.transpose(1, 2, 0)
-    image2 = Image.fromarray(rgb2.astype('uint8'))
+    rgb_path1 = sample1.get("rgb_image")
+    rgb_path2 = sample2.get("rgb_image")
+    if rgb_path1 is None or rgb_path2 is None:
+        raise FileNotFoundError("Input_RGBImage.png not found for comparison samples.")
+
+    image1 = Image.open(rgb_path1).convert("RGB")
+    image2 = Image.open(rgb_path2).convert("RGB")
     
     prompt = (
         "You see two laboratory containers. "
@@ -218,16 +199,25 @@ def compare_containers(
         "Answer with 'FIRST', 'SECOND', or 'EQUAL'."
     )
     
-    # Build messages with two images
+    # Build messages with two images (placeholders) and prepare inputs
     content = [
-        {"type": "image", "image": image1},
-        {"type": "image", "image": image2},
+        {"type": "image"},
+        {"type": "image"},
         {"type": "text", "text": prompt}
     ]
-    
+
     messages = [{"role": "user", "content": content}]
-    
-    inputs = processor(messages, return_tensors="pt").to(model.device)
+
+    text = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+    inputs = processor(
+        text=[text],
+        images=[image1, image2],
+        return_tensors="pt"
+    ).to(model.device)
     
     with torch.no_grad():
         output = model.generate(
@@ -254,7 +244,7 @@ def main():
 
     # Load dataset
     print(f"\nLoading dataset from: {DATA_ROOT}")
-    dataset = LabLiquidVisionDataset(DATA_ROOT)
+    dataset = LabLiquidVisionDataset(DATA_ROOT, rgb_only=True)
     print(f"Dataset size: {len(dataset)}")
 
     if len(dataset) == 0:
@@ -272,7 +262,7 @@ def main():
     print(f"Vessel type: {sample.get('vessel', 'N/A')}")
     print(f"Liquid color: {sample.get('color_liquid', 'N/A')}")
 
-    results = test_sample(model, processor, sample, use_mask=True)
+    results = test_sample(model, processor, sample)
 
     print("\nResults:")
     for task_name, response in results.items():

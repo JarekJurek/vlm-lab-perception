@@ -24,17 +24,25 @@ _ARRAY_KEYS = {
     "vessel_mask": "Input_VesselMask.npy",
 }
 
+_IMAGE_KEYS = {
+    "rgb_image": "Input_RGBImage.png",
+}
+
 
 class LabLiquidVisionDataset:
     """Minimal folder-based dataset loader for LabLiquidVision."""
 
     def __init__(
-        self, root: Union[str, Path], ids: Optional[Iterable[str]] = None
+        self,
+        root: Union[str, Path],
+        ids: Optional[Iterable[str]] = None,
+        rgb_only: bool = False,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
             raise FileNotFoundError(f"Dataset root not found: {self.root}")
         self._ids = list(ids) if ids is not None else self._discover_ids()
+        self._rgb_only = rgb_only
 
     def _discover_ids(self) -> List[str]:
         return sorted([p.name for p in self.root.iterdir() if p.is_dir()])
@@ -57,6 +65,15 @@ class LabLiquidVisionDataset:
             "path": str(sample_dir),
         }
 
+        if self._rgb_only:
+            rgb_path = sample_dir / _IMAGE_KEYS["rgb_image"]
+            if rgb_path.exists():
+                sample["rgb_image"] = rgb_path
+                return sample
+            raise FileNotFoundError(
+                f"Required RGB image not found: {rgb_path}"
+            )
+
         for key, filename in _TEXT_KEYS.items():
             file_path = sample_dir / filename
             if file_path.exists():
@@ -66,6 +83,11 @@ class LabLiquidVisionDataset:
             file_path = sample_dir / filename
             if file_path.exists():
                 sample[key] = np.load(file_path)
+
+        for key, filename in _IMAGE_KEYS.items():
+            file_path = sample_dir / filename
+            if file_path.exists():
+                sample[key] = file_path
 
         return sample
 
