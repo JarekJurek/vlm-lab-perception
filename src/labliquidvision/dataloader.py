@@ -65,19 +65,25 @@ class LabLiquidVisionDataset:
             "path": str(sample_dir),
         }
 
+        for key, filename in _TEXT_KEYS.items():
+            file_path = sample_dir / filename
+            if file_path.exists():
+                sample[key] = _read_text_value(file_path)
+
         if self._rgb_only:
             rgb_path = sample_dir / _IMAGE_KEYS["rgb_image"]
             if rgb_path.exists():
                 sample["rgb_image"] = rgb_path
                 return sample
-            raise FileNotFoundError(
-                f"Required RGB image not found: {rgb_path}"
-            )
 
-        for key, filename in _TEXT_KEYS.items():
-            file_path = sample_dir / filename
-            if file_path.exists():
-                sample[key] = _read_text_value(file_path)
+            rgb_npy_path = sample_dir / _ARRAY_KEYS["rgb"]
+            if rgb_npy_path.exists():
+                sample["rgb"] = np.load(rgb_npy_path)
+                return sample
+
+            raise FileNotFoundError(
+                f"Required RGB image not found: {rgb_path} or {rgb_npy_path}"
+            )
 
         for key, filename in _ARRAY_KEYS.items():
             file_path = sample_dir / filename
