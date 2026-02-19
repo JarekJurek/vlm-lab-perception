@@ -203,7 +203,7 @@ def main():
             percentage = f"{(float(vol_liquid) / float(vol_vessel)) * 100:.1f}%"
         else:
             percentage = "N/A"
-        print(f"  Fill percentage: {vol_liquid}/{vol_vessel} ({percentage})")
+        print(f"  Fill percentage: {percentage}")
 
         results = test_sample(model, processor, sample)
 
