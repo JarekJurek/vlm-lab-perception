@@ -1,37 +1,65 @@
 # vlm-lab-perception
 
-Minimal tooling for the LabLiquidVision dataset.
+Minimal dataset tooling and VLM task evaluation for liquid-container perception.
 
 ## Project structure
 
-- src/labliquidvision: minimal dataloader
-- notebooks: dataset preview notebook
-- data: dataset root (already present)
+- `src/labliquidvision`: `LabLiquidVisionDataset`
+- `src/glassesinthewild`: `GlassesInTheWildDataset`
+- `src/dtld`: `DTLDDataset`
+- `test_qwen_vl_tasks.py`: Qwen3-VL task runner across datasets
+- `notebooks/`: dataset preview notebooks
+- `hpc_scripts/`: helper scripts for HPC setup and runs
+- `data/`: dataset roots
 
 ## Requirements
 
-Install:
+Install dependencies:
 
-- numpy
-- matplotlib
+```bash
+pip install -r requirements.txt
+```
+
+Main runtime packages include `numpy`, `matplotlib`, `torch`, `transformers`, and `Pillow`.
 
 ## Usage
 
-Example (from repo root):
+### 1) Load datasets
+
+From repo root:
 
 ```python
 import sys
 sys.path.append("src")
 
 from labliquidvision import LabLiquidVisionDataset
+from glassesinthewild import GlassesInTheWildDataset
+from dtld import DTLDDataset
 
-ds = LabLiquidVisionDataset("data/LabLiquidVision/processed")
-sample = ds[0]
-print(sample["id"], sample.get("vol_liquid"))
+lab_ds = LabLiquidVisionDataset("data/LabLiquidVision/processed", rgb_only=True)
+glasses_ds = GlassesInTheWildDataset("data/glasses_in_the_wild/glasses_in_the_wild_1000")
+dtld_ds = DTLDDataset("data/DTLD_dataset", rgb_only=True)
+
+sample = lab_ds[0]
+print(sample["id"], sample.get("vol_liquid"), sample.get("rgb_image"))
 ```
 
-## Notebook
+### 2) Run Qwen3-VL tasks
 
-Open the preview notebook:
+Evaluate one or more datasets:
 
-- notebooks/labliquidvision_preview.ipynb
+```bash
+python test_qwen_vl_tasks.py --datasets labliquidvision
+python test_qwen_vl_tasks.py --datasets labliquidvision glasses dtld
+```
+
+Default model in the script: `Qwen/Qwen3-VL-30B-A3B-Instruct`.
+
+## Notebooks
+
+Available preview notebooks:
+
+- `notebooks/dataset_preview_labliquidvision.ipynb`
+- `notebooks/dataset_preview_glasses.ipynb`
+- `notebooks/dataset_preview_dtld.ipynb`
+- `notebooks/dataset_preview_pouring.ipynb`
