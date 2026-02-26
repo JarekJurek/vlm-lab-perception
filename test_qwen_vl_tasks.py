@@ -117,6 +117,8 @@ def load_model():
         device_map="auto"
     ).eval()
     
+    print("Model loaded successfully.")
+    
     return model, processor
 
 
@@ -233,16 +235,11 @@ def test_sample(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Qwen-VL tasks on liquid datasets")
     parser.add_argument(
-        "--dataset",
+        "--datasets",
+        nargs="+",
         choices=["labliquidvision", "glasses", "dtld"],
-        default="labliquidvision",
-        help="Dataset to evaluate.",
-    )
-    parser.add_argument(
-        "--data-root",
-        type=Path,
-        default=None,
-        help="Optional dataset root override.",
+        default=["labliquidvision"],
+        help="One or more datasets to evaluate.",
     )
     return parser.parse_args()
 
@@ -304,33 +301,36 @@ def print_ground_truth(dataset_name: str, sample: Dict[str, Any]) -> None:
 def main():
     """Run all VLM tests."""
     args = parse_args()
-    dataset_name = args.dataset
-    data_root = args.data_root or DATA_ROOTS[dataset_name]
-    task_prompts = TASK_PROMPTS_BY_DATASET[dataset_name]
+    dataset_names = args.datasets
 
     model, processor = load_model()
 
-    print(f"\nDataset: {dataset_name}")
-    print(f"Loading dataset from: {data_root}")
-    dataset = build_dataset(dataset_name, data_root)
-    print(f"Dataset size: {len(dataset)}")
+    for dataset_name in dataset_names:
+        data_root = DATA_ROOTS[dataset_name]
+        task_prompts = TASK_PROMPTS_BY_DATASET[dataset_name]
 
-    if len(dataset) == 0:
-        print("Error: Dataset is empty!")
-        return
+        print(f"\n{'=' * 60}")
+        print(f"Dataset: {dataset_name}")
+        print(f"Loading dataset from: {data_root}")
+        dataset = build_dataset(dataset_name, data_root)
+        print(f"Dataset size: {len(dataset)}")
 
-    for idx, sample in enumerate(dataset, start=1):
-        print("\n" + "-" * 60)
-        print(f"Sample {idx}/{len(dataset)}")
-        print(f"Sample ID: {sample.get('id', 'unknown')}")
+        if len(dataset) == 0:
+            print("Error: Dataset is empty!")
+            continue
 
-        print_ground_truth(dataset_name, sample)
+        for idx, sample in enumerate(dataset, start=1):
+            print("\n" + "-" * 60)
+            print(f"Sample {idx}/{len(dataset)}")
+            print(f"Sample ID: {sample.get('id', 'unknown')}")
 
-        results = test_sample(model, processor, sample, task_prompts)
+            print_ground_truth(dataset_name, sample)
 
-        print("\nPredictions:")
-        for task_name, response in results.items():
-            print(f"  {task_name}: {response}")
+            results = test_sample(model, processor, sample, task_prompts)
+
+            print("\nPredictions:")
+            for task_name, response in results.items():
+                print(f"  {task_name}: {response}")
 
 
 if __name__ == "__main__":

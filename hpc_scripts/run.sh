@@ -30,4 +30,4 @@
 ### --------------- Load environment and run Python script ---------------
 source /zhome/a2/c/213547/vlm-lab-perception/venv/bin/activate
 export HF_HOME="/zhome/a2/c/213547/work3/master_thesis/models/"
-python3 /zhome/a2/c/213547/vlm-lab-perception/test_qwen_vl_tasks.py
+python3 /zhome/a2/c/213547/vlm-lab-perception/test_qwen_vl_tasks.py --datasets labliquidvision glasses
