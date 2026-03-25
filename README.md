@@ -39,21 +39,40 @@ Provides:
 
 This dataset supports grounding and robustness under strong transparency artifacts.
 
-**COQE (Container and Quantity Estimation)**  
+**Pouring (Video Dataset)**
+Video-centric dataset of cup/container filling/pouring sequences (separate opaque vs transparent training; separate test videos).
+Provides:
+
+- RGB frames organized by video folders
+- Test split: per-frame LabelMe-style JSON polygon annotations plus sidecar pixel labels (`label.png`, `label_viz.png`, `label_names.txt`)
+- Training split: RGB sequences plus empty-cup reference frames and per-frame cup masks (`*_cup_mask.png`) in dedicated mask folders
+- Natural “sequence” structure via `video_#` directories for frame-by-frame temporal sampling
+
+This dataset supports liquid-region segmentation (polygon + pixel supervision), cup-context learning (cup masks), and per-video qualitative/temporal analysis across material domains (opaque vs transparent). It is useful for future temporal reasoning benchmarks, but not required for the initial static-image benchmark version.
+
+**OT2 (Tips + Liquid)**
+YOLO-style object detection dataset built from lab videos exported frame-by-frame.
+Provides:
+- RGB frames split into train/, valid/, test/
+- YOLO.txt labels per frame with normalized bounding boxes
+- Two classes: Tip and Liquid (multi-instance per frame)
+- Heuristic “sequence” grouping via filename patterns (e.g., *_###)
+
+This dataset supports detection, counting, and per-sequence qualitative analysis of tips and liquid regions in lab scenes.
+
+### Datasets not included in V1 of the benchmark:
+
+**COQE (Container and Quantity Estimation)** – not in the laboratory setting
 Provides container bounding boxes, category labels, and continuous/discrete volume annotations.  
 Useful for benchmarking quantitative reasoning and comparative volume estimation.
 
-**Liquid Level Detection**  
+**Liquid Level Detection** – not in the laboratory setting
 Provides segmentation masks of liquid regions (COCO-style RLE).  
 Useful for liquid-region grounding tasks.
 
-**LabPicsV1**  
+**LabPicsV1** – annotations not too relevant to our case
 Provides instance and semantic segmentation masks of materials in laboratory scenes, including multi-phase annotations.  
 Useful for material reasoning and multi-phase detection.
-
-**Pouring (Video Dataset)**  
-Frame-wise liquid masks during pouring sequences.  
-Useful for future temporal reasoning benchmarks, but not required for the initial static-image benchmark version.
 
 ## Dataset Composition
 
@@ -165,9 +184,9 @@ TLG provides a structured and reproducible evaluation framework for multimodal r
 
 ## Project structure
 
-- `src/labliquidvision`: `LabLiquidVisionDataset`
-- `src/glassesinthewild`: `GlassesInTheWildDataset`
-- `src/dtld`: `DTLDDataset`
+- `src/datasets/labliquidvision`: `LabLiquidVisionDataset`
+- `src/datasets/glassesinthewild`: `GlassesInTheWildDataset`
+- `src/datasets/dtld`: `DTLDDataset`
 - `test_qwen_vl_tasks.py`: Qwen3-VL task runner across datasets
 - `notebooks/`: dataset preview notebooks
 - `hpc_scripts/`: helper scripts for HPC setup and runs
@@ -193,9 +212,9 @@ From repo root:
 import sys
 sys.path.append("src")
 
-from labliquidvision import LabLiquidVisionDataset
-from glassesinthewild import GlassesInTheWildDataset
-from dtld import DTLDDataset
+from datasets.labliquidvision import LabLiquidVisionDataset
+from datasets.glassesinthewild import GlassesInTheWildDataset
+from datasets.dtld import DTLDDataset
 
 lab_ds = LabLiquidVisionDataset("data/LabLiquidVision/processed", rgb_only=True)
 glasses_ds = GlassesInTheWildDataset("data/glasses_in_the_wild/glasses_in_the_wild_1000")
