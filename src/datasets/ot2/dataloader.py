@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from src.tlg import PromptBank, TLGAnnotation
+try:
+    from tlg import PromptBank, TLGAnnotation
+except ModuleNotFoundError:  # pragma: no cover
+    from src.tlg import PromptBank, TLGAnnotation
 
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png"}

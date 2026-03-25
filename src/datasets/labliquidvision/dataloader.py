@@ -5,7 +5,10 @@ from typing import Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
-from src.tlg import PromptBank, TLGAnnotation
+try:
+    from tlg import PromptBank, TLGAnnotation
+except ModuleNotFoundError:  # pragma: no cover
+    from src.tlg import PromptBank, TLGAnnotation
 from src.tlg.annotations import discretize_fill_level_ordinal
 
 

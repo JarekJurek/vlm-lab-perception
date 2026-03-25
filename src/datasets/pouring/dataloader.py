@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
-from src.tlg import PromptBank, TLGAnnotation
+try:
+    from tlg import PromptBank, TLGAnnotation
+except ModuleNotFoundError:  # pragma: no cover
+    from src.tlg import PromptBank, TLGAnnotation
 
 
 _VIDEO_RE = re.compile(r"^video_\d+$")

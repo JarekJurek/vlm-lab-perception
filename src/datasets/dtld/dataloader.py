@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 
-from src.tlg import PromptBank, TLGAnnotation
+try:
+    from tlg import PromptBank, TLGAnnotation
+except ModuleNotFoundError:  # pragma: no cover
+    from src.tlg import PromptBank, TLGAnnotation
 
 
 _DTLD_OBJECT_NAMES = {
