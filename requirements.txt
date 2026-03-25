@@ -7,3 +7,4 @@ Pillow
 accelerate
 peft
 bitsandbytes
+PyYAML

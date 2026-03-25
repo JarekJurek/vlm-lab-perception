@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union, cast
 
+from src.tlg import PromptBank, TLGAnnotation
+
 
 class GlassesInTheWildDataset:
     """Minimal loader for the Glasses in the Wild keypoint dataset."""
@@ -12,10 +14,13 @@ class GlassesInTheWildDataset:
         self,
         root: Union[str, Path],
         ids: Optional[Iterable[int]] = None,
+        prompt_bank: Optional[PromptBank] = None,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
             raise FileNotFoundError(f"Dataset root not found: {self.root}")
+
+        self._prompt_bank = prompt_bank or PromptBank.default()
 
         self.images_dir = self.root / "images"
         if not self.images_dir.is_dir():
@@ -69,7 +74,46 @@ class GlassesInTheWildDataset:
             if fill_percentage is not None:
                 sample["fill_percentage"] = fill_percentage
 
+            sample["annotations"] = self._build_annotations(str(image_id), sample)
+
             self._samples.append(sample)
+
+    def _build_annotations(self, image_id: str, sample: Dict[str, object]) -> List[TLGAnnotation]:
+        dataset = "glasses"
+        annotations: List[TLGAnnotation] = []
+
+        fill_percentage = sample.get("fill_percentage")
+        fill = float(fill_percentage) if isinstance(fill_percentage, (int, float)) else None
+
+        def add(task: str, answer: object, metadata: Dict[str, object]) -> None:
+            spec = self._prompt_bank.get(dataset, task)
+            annotations.append(
+                TLGAnnotation(
+                    image_id=image_id,
+                    dataset=dataset,
+                    task_type=str(spec.get("task_type", task)),
+                    question=str(spec["question"]),
+                    choices=spec.get("choices"),
+                    answer=answer,
+                    metadata={"task": task, **metadata},
+                )
+            )
+
+        if fill is not None:
+            fill_clamped = float(max(0.0, min(100.0, fill)))
+            add(
+                "fill_percentage",
+                round(fill_clamped, 1),
+                {"derived_fill_percentage": round(fill_clamped, 6)},
+            )
+            # A pragmatic definition: >~empty threshold implies liquid present.
+            add(
+                "liquid_presence",
+                "YES" if fill_clamped > 1.0 else "NO",
+                {"derived_fill_percentage": round(fill_clamped, 6)},
+            )
+
+        return annotations
 
     def _extract_keypoint_names(self, annotations_data: Dict[str, Any]) -> List[str]:
         categories = cast(List[Dict[str, Any]], annotations_data.get("categories", []))

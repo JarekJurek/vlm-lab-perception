@@ -9,15 +9,17 @@ liquid-container datasets:
 
 import argparse
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, List
 
 import torch
 from PIL import Image
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
-from src.dtld import DTLDDataset
-from src.glassesinthewild import GlassesInTheWildDataset
-from src.labliquidvision import LabLiquidVisionDataset
+from src.datasets.dtld import DTLDDataset
+from src.datasets.glassesinthewild import GlassesInTheWildDataset
+from src.datasets.labliquidvision import LabLiquidVisionDataset
+
+from src.tlg import TLGAnnotation
 
 
 MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Instruct"
@@ -36,71 +38,6 @@ DTLD_OBJECT_NAMES = {
     16: "T75 Flask",
     17: "T175 Flask",
     19: "G-rex",
-}
-
-TASK_PROMPTS_BY_DATASET = {
-    "labliquidvision": {
-        "binary_liquid": (
-            "Look at this container. Does it contain any liquid? "
-            "Answer with only 'YES' or 'NO'."
-        ),
-        "ordinal_level": (
-            "What is the fill level of liquid in this container? "
-            "Choose exactly one: EMPTY, LOW, MID, HIGH, or FULL."
-        ),
-        "bubble_presence": (
-            "Are there bubbles visible in the liquid? "
-            "Choose exactly one: NONE, SOME, or LOTS."
-        ),
-        "fill_percentage": (
-            "Estimate the fill level as a percentage of the container's capacity. "
-            "Answer with only a number between 0 and 100."
-        ),
-        "container_type": (
-            "What type of laboratory container is this? "
-            "Answer briefly (e.g., beaker, flask, graduated cylinder)."
-        ),
-        "liquid_color": (
-            "What color is the liquid in this container? "
-            "Answer with a single color name."
-        ),
-    },
-    "glasses": {
-        "binary_liquid": (
-            "Does this glass contain any liquid? "
-            "Answer with only 'YES' or 'NO'."
-        ),
-        "fill_percentage": (
-            "Estimate the liquid fill level of this glass as a percentage. "
-            "Answer with only a number between 0 and 100."
-        ),
-        "fluid_level_position": (
-            "Estimate where the liquid surface is on the glass from top to bottom. "
-            "Answer with one word: TOP, UPPER-MID, MID, LOWER-MID, or BOTTOM."
-        ),
-        "container_type": (
-            "What kind of drinking container is shown? "
-            "Answer with one short phrase."
-        ),
-    },
-    "dtld": {
-        "container_type": (
-            "Identify the container type. "
-            "Choose exactly one: T25 Flask, T75 Flask, T175 Flask, or G-rex."
-        ),
-        "fill_height_mm": (
-            "Estimate liquid height in millimeters. "
-            "Answer with only a number."
-        ),
-        "fill_percentage": (
-            "Estimate the fill level as a percentage of container capacity. "
-            "Answer with only a number between 0 and 100."
-        ),
-        "liquid_presence": (
-            "Is there visible liquid in this container? "
-            "Answer with only 'YES' or 'NO'."
-        ),
-    },
 }
 
 
@@ -192,7 +129,7 @@ def test_sample(
     model,
     processor,
     sample: Dict[str, Any],
-    task_prompts: Dict[str, str]
+    annotations: List[TLGAnnotation],
 ) -> Dict[str, str]:
     """Test all tasks on a single sample.
     
@@ -222,11 +159,12 @@ def test_sample(
     if mask_path is not None:
         mask_image = Image.open(mask_path).convert("RGB")
 
-    results = {}
-    
-    for task_name, prompt in task_prompts.items():
+    results: Dict[str, str] = {}
+
+    for ann in annotations:
+        task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  Running task: {task_name}...")
-        response = run_task(model, processor, rgb_image, prompt, mask=mask_image)
+        response = run_task(model, processor, rgb_image, ann.question, mask=mask_image)
         results[task_name] = response
     
     return results
@@ -256,6 +194,15 @@ def build_dataset(dataset_name: str, data_root: Path):
 
 def print_ground_truth(dataset_name: str, sample: Dict[str, Any]) -> None:
     print("\nGround Truth:")
+
+    annotations = sample.get("annotations")
+    if isinstance(annotations, list) and annotations:
+        print("  Standardized annotations:")
+        for ann in annotations:
+            if not isinstance(ann, TLGAnnotation):
+                continue
+            task_key = str(ann.metadata.get("task", ann.task_type))
+            print(f"    - {task_key}: {ann.answer}")
 
     if dataset_name == "labliquidvision":
         print(f"  Vessel type: {sample.get('vessel', 'N/A')}")
@@ -307,7 +254,6 @@ def main():
 
     for dataset_name in dataset_names:
         data_root = DATA_ROOTS[dataset_name]
-        task_prompts = TASK_PROMPTS_BY_DATASET[dataset_name]
 
         print(f"\n{'=' * 60}")
         print(f"Dataset: {dataset_name}")
@@ -326,7 +272,12 @@ def main():
 
             print_ground_truth(dataset_name, sample)
 
-            results = test_sample(model, processor, sample, task_prompts)
+            annotations = sample.get("annotations")
+            if not isinstance(annotations, list) or not annotations:
+                print("  No standardized annotations available for this sample; skipping.")
+                continue
+
+            results = test_sample(model, processor, sample, annotations)
 
             print("\nPredictions:")
             for task_name, response in results.items():

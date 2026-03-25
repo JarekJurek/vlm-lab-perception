@@ -1,0 +1,79 @@
+# Prompt bank for TLG.
+#
+# Editing policy:
+# - Keep prompts short and unambiguous.
+# - Prefer explicit output constraints (e.g., "Answer with only YES/NO").
+# - Only define tasks that have reliable supervision in the source dataset.
+
+labliquidvision:
+  liquid_presence:
+    task_type: "Liquid Presence Detection (binary)"
+    question: "Look at this container. Does it contain any liquid? Answer with only 'YES' or 'NO'."
+    choices: ["YES", "NO"]
+
+  fill_percentage:
+    task_type: "Fill-Level Estimation (continuous)"
+    question: "Estimate the fill level of the liquid in this container as a percentage (0-100). Answer with only a number between 0 and 100."
+
+  fill_level_ordinal:
+    task_type: "Fill-Level Estimation (ordinal)"
+    question: "What is the fill level of liquid in this container? Choose exactly one: EMPTY, LOW, MID, HIGH, or FULL."
+    choices: ["EMPTY", "LOW", "MID", "HIGH", "FULL"]
+
+  container_type:
+    task_type: "Container Type Recognition (classification)"
+    question: "What type of laboratory container is this? Answer with only one short label."
+
+  liquid_color:
+    task_type: "Liquid Color Recognition (classification)"
+    question: "What color is the liquid in this container? Answer with a single color name."
+
+glasses:
+  fill_percentage:
+    task_type: "Fill-Level Estimation (continuous)"
+    question: "Estimate the liquid fill level of this glass as a percentage (0-100). Answer with only a number between 0 and 100."
+
+  liquid_presence:
+    task_type: "Liquid Presence Detection (binary)"
+    question: "Does this glass contain any liquid? Answer with only 'YES' or 'NO'."
+    choices: ["YES", "NO"]
+
+dtld:
+  container_type:
+    task_type: "Container Type Recognition (classification)"
+    question: "Identify the container type. Choose exactly one: T25 Flask, T75 Flask, T175 Flask, or G-rex."
+    choices: ["T25 Flask", "T75 Flask", "T175 Flask", "G-rex"]
+
+  fill_height_mm:
+    task_type: "Fill-Level Estimation (height_mm)"
+    question: "Estimate liquid height in millimeters. Answer with only a number."
+
+  liquid_presence:
+    task_type: "Liquid Presence Detection (binary)"
+    question: "Is there visible liquid in this container? Answer with only 'YES' or 'NO'."
+    choices: ["YES", "NO"]
+
+ot2:
+  tip_presence:
+    task_type: "Tip Presence Detection (binary)"
+    question: "Is there a pipette tip visible in the image? Answer with only 'YES' or 'NO'."
+    choices: ["YES", "NO"]
+
+  liquid_presence:
+    task_type: "Liquid Presence Detection (binary)"
+    question: "Is there any visible liquid in the image? Answer with only 'YES' or 'NO'."
+    choices: ["YES", "NO"]
+
+  tip_count:
+    task_type: "Tip Counting (discrete)"
+    question: "How many pipette tips are visible? Answer with only an integer (0 or greater)."
+
+  liquid_count:
+    task_type: "Liquid Region Counting (discrete)"
+    question: "How many distinct liquid regions are labeled? Answer with only an integer (0 or greater)."
+
+pouring:
+  liquid_presence:
+    task_type: "Liquid Presence Detection (binary)"
+    question: "Is there any visible liquid in the container? Answer with only 'YES' or 'NO'."
+    choices: ["YES", "NO"]

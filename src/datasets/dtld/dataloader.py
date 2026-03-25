@@ -4,6 +4,16 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 
+from src.tlg import PromptBank, TLGAnnotation
+
+
+_DTLD_OBJECT_NAMES = {
+    15: "T25 Flask",
+    16: "T75 Flask",
+    17: "T175 Flask",
+    19: "G-rex",
+}
+
 
 class DTLDDataset:
     """Minimal folder-based dataset loader for DTLD."""
@@ -13,6 +23,7 @@ class DTLDDataset:
         root: Union[str, Path],
         scene_ids: Optional[Iterable[str]] = None,
         rgb_only: bool = True,
+        prompt_bank: Optional[PromptBank] = None,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
@@ -20,6 +31,7 @@ class DTLDDataset:
 
         self._scene_ids = list(scene_ids) if scene_ids is not None else self._discover_scene_ids()
         self._rgb_only = rgb_only
+        self._prompt_bank = prompt_bank or PromptBank.default()
         self._scene_cache: Dict[str, Dict[str, object]] = {}
         self._entries = self._build_entries()
 
@@ -121,4 +133,51 @@ class DTLDDataset:
             if depth_path.exists():
                 sample["depth_image"] = depth_path
 
+        sample["annotations"] = self._build_annotations(sample)
+
         return sample
+
+    def _build_annotations(self, sample: Dict[str, object]) -> List[TLGAnnotation]:
+        dataset = "dtld"
+        image_id = str(sample.get("id", ""))
+        annotations: List[TLGAnnotation] = []
+
+        obj_id = sample.get("obj_id")
+        obj_id_int = int(obj_id) if isinstance(obj_id, int) or (isinstance(obj_id, float) and obj_id.is_integer()) else None
+        liquid_h = sample.get("liquid_h")
+        liquid_h_f = float(liquid_h) if isinstance(liquid_h, (int, float)) else None
+
+        def add(task: str, answer: object, metadata: Dict[str, object]) -> None:
+            spec = self._prompt_bank.get(dataset, task)
+            annotations.append(
+                TLGAnnotation(
+                    image_id=image_id,
+                    dataset=dataset,
+                    task_type=str(spec.get("task_type", task)),
+                    question=str(spec["question"]),
+                    choices=spec.get("choices"),
+                    answer=answer,
+                    metadata={"task": task, **metadata},
+                )
+            )
+
+        if obj_id_int is not None and obj_id_int in _DTLD_OBJECT_NAMES:
+            add(
+                "container_type",
+                _DTLD_OBJECT_NAMES[obj_id_int],
+                {"obj_id": obj_id_int},
+            )
+
+        if liquid_h_f is not None:
+            add(
+                "fill_height_mm",
+                round(liquid_h_f, 2),
+                {"liquid_h": liquid_h_f},
+            )
+            add(
+                "liquid_presence",
+                "YES" if liquid_h_f > 0 else "NO",
+                {"liquid_h": liquid_h_f},
+            )
+
+        return annotations
