@@ -127,9 +127,22 @@ class DTLDDataset:
             if "visib_fract" in frame_info:
                 sample["visib_fract"] = frame_info["visib_fract"]
 
-        mask_path = scene_dir / "mask_visib" / f"{frame_id:06d}_{obj_idx:06d}.png"
-        if mask_path.exists():
-            sample["mask_image"] = mask_path
+        mask_visib_path = scene_dir / "mask_visib" / f"{frame_id:06d}_{obj_idx:06d}.png"
+        if mask_visib_path.exists():
+            sample["mask_image"] = mask_visib_path
+            sample["mask_visib_image"] = mask_visib_path
+
+        mask_full_path = scene_dir / "mask" / f"{frame_id:06d}_{obj_idx:06d}.png"
+        if mask_full_path.exists():
+            sample["mask_full_image"] = mask_full_path
+
+        liquid_label_path = scene_dir / "liquid_label" / f"{frame_id:06d}_{obj_idx:06d}.png"
+        if liquid_label_path.exists():
+            sample["liquid_label_image"] = liquid_label_path
+
+        mask_visib_liquid_path = scene_dir / "mask_visib_liquid" / f"{frame_id:06d}_{obj_idx:06d}.png"
+        if mask_visib_liquid_path.exists():
+            sample["mask_visib_liquid_image"] = mask_visib_liquid_path
 
         if not self._rgb_only:
             depth_path = scene_dir / "depth" / f"{frame_id:06d}.png"
