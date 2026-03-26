@@ -69,13 +69,62 @@ class OT2Dataset:
         self._prompt_bank = prompt_bank or PromptBank.default()
         self._class_names = _load_yolo_class_names(self.root)
 
+        # Support both:
+        # 1) Standard YOLO split layout: root/{train,valid,test}/{images,labels}/...
+        # 2) Flat layout: root/*.jpg + root/*.txt (labels alongside images)
+        self._flat_dir: Optional[Path] = None
+        if not self._has_yolo_split_layout():
+            self._flat_dir = self._discover_flat_dir()
+
         if ids is not None:
             self._entries = self._resolve_ids(list(ids))
         else:
             self._entries = self._discover_entries()
 
+    def _has_yolo_split_layout(self) -> bool:
+        for split in self._splits:
+            images_dir = self.root / split / "images"
+            labels_dir = self.root / split / "labels"
+            if images_dir.is_dir() and labels_dir.is_dir():
+                return True
+        return False
+
+    def _discover_flat_dir(self) -> Optional[Path]:
+        """Heuristic: find a directory containing YOLO-style image/label pairs."""
+
+        candidates = [self.root]
+        # Common layout for the OT2-Computer-Vision dataset drop.
+        candidates.extend(
+            [
+                self.root / "Training Data" / "Images_with_Labels_tips_n_Liquid",
+                self.root / "Training Data" / "Images with labels_tips only",
+                self.root / "Training Data" / "Images",
+            ]
+        )
+
+        for d in candidates:
+            if not d.is_dir():
+                continue
+            imgs = [p for p in d.iterdir() if p.is_file() and p.suffix.lower() in _IMG_EXTS]
+            if not imgs:
+                continue
+            # Require at least one matching .txt label file.
+            for p in imgs[:50]:
+                if p.with_suffix(".txt").exists():
+                    return d
+        return None
+
     def _discover_entries(self) -> List[Tuple[str, Path]]:
         entries: List[Tuple[str, Path]] = []
+
+        # Flat mode.
+        if self._flat_dir is not None:
+            for p in sorted(self._flat_dir.iterdir()):
+                if p.is_file() and p.suffix.lower() in _IMG_EXTS:
+                    entries.append(("all", p))
+            return entries
+
+        # YOLO split mode.
         for split in self._splits:
             images_dir = self.root / split / "images"
             if not images_dir.is_dir():
@@ -88,9 +137,13 @@ class OT2Dataset:
     def _resolve_ids(self, ids: List[str]) -> List[Tuple[str, Path]]:
         """Resolve ids to entries.
 
-        Supported forms:
+        Supported forms (YOLO split mode):
         - "train/tipsWater_4" (split/stem)
         - "train/images/tipsWater_4.jpg" (relative path under split)
+
+        Supported forms (flat mode):
+        - "tipsWater_4" (stem)
+        - "tipsWater_4.jpg" (filename)
 
         Returns entries with existing images only.
         """
@@ -99,6 +152,25 @@ class OT2Dataset:
         for raw in ids:
             s = str(raw).strip()
             if not s:
+                continue
+
+            # Flat mode ids.
+            if self._flat_dir is not None and "/" not in s:
+                p = self._flat_dir / s
+                if p.suffix.lower() not in _IMG_EXTS:
+                    # Try all extensions.
+                    candidate: Optional[Path] = None
+                    for ext in sorted(_IMG_EXTS):
+                        q = self._flat_dir / f"{s}{ext}"
+                        if q.exists():
+                            candidate = q
+                            break
+                    if candidate is None:
+                        raise FileNotFoundError(f"Could not resolve OT2 id={raw!r} in flat_dir={self._flat_dir}")
+                    p = candidate
+                if not p.exists():
+                    raise FileNotFoundError(f"Could not resolve OT2 id={raw!r} in flat_dir={self._flat_dir}")
+                entries.append(("all", p))
                 continue
 
             parts = s.split("/", 1)
@@ -140,12 +212,15 @@ class OT2Dataset:
     def __getitem__(self, index: int) -> Dict[str, object]:
         split, img_path = self._entries[index]
 
-        label_path = self.root / split / "labels" / f"{img_path.stem}.txt"
+        if split == "all" and self._flat_dir is not None:
+            label_path = img_path.with_suffix(".txt")
+        else:
+            label_path = self.root / split / "labels" / f"{img_path.stem}.txt"
         boxes = _parse_yolo_label_file(label_path)
 
         sequence_id, frame_index = _derive_sequence_fields(img_path.stem)
 
-        image_id = f"{split}/{img_path.stem}"
+        image_id = f"{split}/{img_path.stem}" if split != "all" else str(img_path.stem)
         sample: Dict[str, object] = {
             "id": image_id,
             "split": split,

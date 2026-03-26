@@ -187,6 +187,8 @@ TLG provides a structured and reproducible evaluation framework for multimodal r
 - `src/datasets/labliquidvision`: `LabLiquidVisionDataset`
 - `src/datasets/glassesinthewild`: `GlassesInTheWildDataset`
 - `src/datasets/dtld`: `DTLDDataset`
+- `src/tlg/prompt_bank.yaml`: prompt definitions (prompt_id -> question/choices)
+- `src/tlg/dataset_prompts.yaml`: dataset -> included tasks, with optional overrides
 - `test_qwen_vl_tasks.py`: Qwen3-VL task runner across datasets
 - `notebooks/`: dataset preview notebooks
 - `hpc_scripts/`: helper scripts for HPC setup and runs

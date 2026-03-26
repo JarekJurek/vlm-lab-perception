@@ -1,0 +1,35 @@
+# Dataset -> included prompts/tasks.
+#
+# Most datasets can be a simple list: each entry is a task name and also the
+# default prompt_id (prompt_id == task).
+#
+# If a dataset needs dataset-specific wording or constrained choices for a task,
+# use the mapping form with an `overrides` block.
+
+labliquidvision:
+  - liquid_presence
+  - fill_percentage
+  - fill_level_ordinal
+  - container_type
+  - liquid_color
+
+glasses:
+  - fill_percentage
+  - liquid_presence
+
+dtld:
+  include:
+    - container_type
+    - fill_height_mm
+    - liquid_presence
+  overrides:
+    container_type: dtld_container_type_4way
+
+ot2:
+  - tip_presence
+  - liquid_presence
+  - tip_count
+  - liquid_count
+
+pouring:
+  - liquid_presence

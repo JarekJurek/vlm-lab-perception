@@ -44,9 +44,19 @@ class LabLiquidVisionDataset:
         rgb_only: bool = False,
         prompt_bank: Optional[PromptBank] = None,
     ) -> None:
-        self.root = Path(root)
-        if not self.root.exists():
-            raise FileNotFoundError(f"Dataset root not found: {self.root}")
+        root_path = Path(root)
+        if not root_path.exists():
+            raise FileNotFoundError(f"Dataset root not found: {root_path}")
+
+        # Accept both:
+        # - base folder:   .../LabLiquidVision/ (contains `processed/`)
+        # - processed dir: .../LabLiquidVision/processed/
+        processed = root_path / "processed"
+        if root_path.name != "processed" and processed.is_dir():
+            self.root = processed
+        else:
+            self.root = root_path
+
         self._ids = list(ids) if ids is not None else self._discover_ids()
         self._rgb_only = rgb_only
         self._prompt_bank = prompt_bank or PromptBank.default()
