@@ -5,11 +5,10 @@ from typing import Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
-try:
-    from tlg import PromptBank, TLGAnnotation
-except ModuleNotFoundError:  # pragma: no cover
-    from src.tlg import PromptBank, TLGAnnotation
-from src.tlg.annotations import discretize_fill_level_ordinal
+from functools import partial
+
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
+from tlg.annotations import discretize_fill_level_ordinal
 
 
 _TEXT_KEYS = {
@@ -111,55 +110,56 @@ class LabLiquidVisionDataset:
         dataset = "labliquidvision"
         annotations: List[TLGAnnotation] = []
 
+        add = partial(
+            make_tlg_annotation,
+            self._prompt_bank,
+            dataset=dataset,
+            image_id=image_id,
+        )
+
         vessel = sample.get("vessel")
         color_liquid = sample.get("color_liquid")
         vol_liquid = _as_float(sample.get("vol_liquid"))
         vol_vessel = _as_float(sample.get("vol_vessel"))
 
-        def add(task: str, answer: object, metadata: Dict[str, object]) -> None:
-            spec = self._prompt_bank.get(dataset, task)
-            annotations.append(
-                TLGAnnotation(
-                    image_id=image_id,
-                    dataset=dataset,
-                    task_type=str(spec.get("task_type", task)),
-                    question=str(spec["question"]),
-                    choices=spec.get("choices"),
-                    answer=answer,
-                    metadata={"task": task, **metadata},
-                )
-            )
-
         if vol_liquid is not None:
-            add(
-                "liquid_presence",
-                "YES" if vol_liquid > 0 else "NO",
-                {"vol_liquid": vol_liquid, "vol_vessel": vol_vessel},
+            annotations.append(
+                add(
+                    task="liquid_presence",
+                    answer="YES" if vol_liquid > 0 else "NO",
+                    metadata={"vol_liquid": vol_liquid, "vol_vessel": vol_vessel},
+                )
             )
 
         if vol_liquid is not None and vol_vessel is not None and vol_vessel > 0:
             fill_percentage = (vol_liquid / vol_vessel) * 100.0
             fill_percentage = float(max(0.0, min(100.0, fill_percentage)))
-            add(
-                "fill_percentage",
-                round(fill_percentage, 1),
-                {
-                    "vol_liquid": vol_liquid,
-                    "vol_vessel": vol_vessel,
-                    "derived_fill_percentage": round(fill_percentage, 6),
-                },
+            annotations.append(
+                add(
+                    task="fill_percentage",
+                    answer=round(fill_percentage, 1),
+                    metadata={
+                        "vol_liquid": vol_liquid,
+                        "vol_vessel": vol_vessel,
+                        "derived_fill_percentage": round(fill_percentage, 6),
+                    },
+                )
             )
-            add(
-                "fill_level_ordinal",
-                discretize_fill_level_ordinal(fill_percentage),
-                {"derived_fill_percentage": round(fill_percentage, 6)},
+            annotations.append(
+                add(
+                    task="fill_level_ordinal",
+                    answer=discretize_fill_level_ordinal(fill_percentage),
+                    metadata={"derived_fill_percentage": round(fill_percentage, 6)},
+                )
             )
 
         if isinstance(vessel, str) and vessel.strip():
-            add("container_type", vessel.strip(), {"vessel": vessel.strip()})
+            annotations.append(add(task="container_type", answer=vessel.strip(), metadata={"vessel": vessel.strip()}))
 
         if isinstance(color_liquid, str) and color_liquid.strip():
-            add("liquid_color", color_liquid.strip(), {"color_liquid": color_liquid.strip()})
+            annotations.append(
+                add(task="liquid_color", answer=color_liquid.strip(), metadata={"color_liquid": color_liquid.strip()})
+            )
 
         return annotations
 

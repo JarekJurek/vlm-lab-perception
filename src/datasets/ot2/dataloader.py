@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-try:
-    from tlg import PromptBank, TLGAnnotation
-except ModuleNotFoundError:  # pragma: no cover
-    from src.tlg import PromptBank, TLGAnnotation
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png"}
@@ -167,31 +165,30 @@ class OT2Dataset:
 
     def _build_annotations(self, image_id: str, boxes: List[YoloBox]) -> List[TLGAnnotation]:
         dataset = "ot2"
-        annotations: List[TLGAnnotation] = []
+        add = partial(
+            make_tlg_annotation,
+            self._prompt_bank,
+            dataset=dataset,
+            image_id=image_id,
+        )
 
         tip_count = sum(1 for b in boxes if int(b.cls) == 0)
         liquid_count = sum(1 for b in boxes if int(b.cls) == 1)
 
-        def add(task: str, answer: object, metadata: Dict[str, object]) -> None:
-            spec = self._prompt_bank.get(dataset, task)
-            annotations.append(
-                TLGAnnotation(
-                    image_id=image_id,
-                    dataset=dataset,
-                    task_type=str(spec.get("task_type", task)),
-                    question=str(spec["question"]),
-                    choices=spec.get("choices"),
-                    answer=answer,
-                    metadata={"task": task, **metadata},
-                )
-            )
-
-        add("tip_presence", "YES" if tip_count > 0 else "NO", {"tip_count": tip_count})
-        add("liquid_presence", "YES" if liquid_count > 0 else "NO", {"liquid_count": liquid_count})
-        add("tip_count", int(tip_count), {"tip_count": tip_count})
-        add("liquid_count", int(liquid_count), {"liquid_count": liquid_count})
-
-        return annotations
+        return [
+            add(
+                task="tip_presence",
+                answer="YES" if tip_count > 0 else "NO",
+                metadata={"tip_count": tip_count},
+            ),
+            add(
+                task="liquid_presence",
+                answer="YES" if liquid_count > 0 else "NO",
+                metadata={"liquid_count": liquid_count},
+            ),
+            add(task="tip_count", answer=int(tip_count), metadata={"tip_count": tip_count}),
+            add(task="liquid_count", answer=int(liquid_count), metadata={"liquid_count": liquid_count}),
+        ]
 
 
 def _derive_sequence_fields(stem: str) -> Tuple[Optional[str], Optional[int]]:

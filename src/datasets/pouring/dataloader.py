@@ -3,13 +3,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
-try:
-    from tlg import PromptBank, TLGAnnotation
-except ModuleNotFoundError:  # pragma: no cover
-    from src.tlg import PromptBank, TLGAnnotation
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 
 _VIDEO_RE = re.compile(r"^video_\d+$")
@@ -295,6 +293,13 @@ class PouringDataset:
         dataset = "pouring"
         annotations: List[TLGAnnotation] = []
 
+        add = partial(
+            make_tlg_annotation,
+            self._prompt_bank,
+            dataset=dataset,
+            image_id=image_id,
+        )
+
         shapes = sample.get("labelme_shapes")
         liquid_poly_count = 0
         if isinstance(shapes, list):
@@ -304,24 +309,12 @@ class PouringDataset:
                 if str(s.get("label", "")).strip() == "liquid_mask":
                     liquid_poly_count += 1
 
-        def add(task: str, answer: object, metadata: Dict[str, object]) -> None:
-            spec = self._prompt_bank.get(dataset, task)
-            annotations.append(
-                TLGAnnotation(
-                    image_id=image_id,
-                    dataset=dataset,
-                    task_type=str(spec.get("task_type", task)),
-                    question=str(spec["question"]),
-                    choices=spec.get("choices"),
-                    answer=answer,
-                    metadata={"task": task, **metadata},
-                )
+        annotations.append(
+            add(
+                task="liquid_presence",
+                answer="YES" if liquid_poly_count > 0 else "NO",
+                metadata={"liquid_polygon_count": int(liquid_poly_count)},
             )
-
-        add(
-            "liquid_presence",
-            "YES" if liquid_poly_count > 0 else "NO",
-            {"liquid_polygon_count": int(liquid_poly_count)},
         )
 
         return annotations

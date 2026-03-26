@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 
-try:
-    from tlg import PromptBank, TLGAnnotation
-except ModuleNotFoundError:  # pragma: no cover
-    from src.tlg import PromptBank, TLGAnnotation
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 
 _DTLD_OBJECT_NAMES = {
@@ -158,42 +156,33 @@ class DTLDDataset:
         image_id = str(sample.get("id", ""))
         annotations: List[TLGAnnotation] = []
 
+        add = partial(
+            make_tlg_annotation,
+            self._prompt_bank,
+            dataset=dataset,
+            image_id=image_id,
+        )
+
         obj_id = sample.get("obj_id")
         obj_id_int = int(obj_id) if isinstance(obj_id, int) or (isinstance(obj_id, float) and obj_id.is_integer()) else None
         liquid_h = sample.get("liquid_h")
         liquid_h_f = float(liquid_h) if isinstance(liquid_h, (int, float)) else None
 
-        def add(task: str, answer: object, metadata: Dict[str, object]) -> None:
-            spec = self._prompt_bank.get(dataset, task)
-            annotations.append(
-                TLGAnnotation(
-                    image_id=image_id,
-                    dataset=dataset,
-                    task_type=str(spec.get("task_type", task)),
-                    question=str(spec["question"]),
-                    choices=spec.get("choices"),
-                    answer=answer,
-                    metadata={"task": task, **metadata},
-                )
-            )
-
         if obj_id_int is not None and obj_id_int in _DTLD_OBJECT_NAMES:
-            add(
-                "container_type",
-                _DTLD_OBJECT_NAMES[obj_id_int],
-                {"obj_id": obj_id_int},
+            annotations.append(
+                add(task="container_type", answer=_DTLD_OBJECT_NAMES[obj_id_int], metadata={"obj_id": obj_id_int})
             )
 
         if liquid_h_f is not None:
-            add(
-                "fill_height_mm",
-                round(liquid_h_f, 2),
-                {"liquid_h": liquid_h_f},
+            annotations.append(
+                add(task="fill_height_mm", answer=round(liquid_h_f, 2), metadata={"liquid_h": liquid_h_f})
             )
-            add(
-                "liquid_presence",
-                "YES" if liquid_h_f > 0 else "NO",
-                {"liquid_h": liquid_h_f},
+            annotations.append(
+                add(
+                    task="liquid_presence",
+                    answer="YES" if liquid_h_f > 0 else "NO",
+                    metadata={"liquid_h": liquid_h_f},
+                )
             )
 
         return annotations

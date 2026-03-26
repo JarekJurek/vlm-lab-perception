@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union, cast
 
-try:
-    from tlg import PromptBank, TLGAnnotation
-except ModuleNotFoundError:  # pragma: no cover
-    from src.tlg import PromptBank, TLGAnnotation
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 
 class GlassesInTheWildDataset:
@@ -85,35 +83,32 @@ class GlassesInTheWildDataset:
         dataset = "glasses"
         annotations: List[TLGAnnotation] = []
 
+        add = partial(
+            make_tlg_annotation,
+            self._prompt_bank,
+            dataset=dataset,
+            image_id=image_id,
+        )
+
         fill_percentage = sample.get("fill_percentage")
         fill = float(fill_percentage) if isinstance(fill_percentage, (int, float)) else None
 
-        def add(task: str, answer: object, metadata: Dict[str, object]) -> None:
-            spec = self._prompt_bank.get(dataset, task)
-            annotations.append(
-                TLGAnnotation(
-                    image_id=image_id,
-                    dataset=dataset,
-                    task_type=str(spec.get("task_type", task)),
-                    question=str(spec["question"]),
-                    choices=spec.get("choices"),
-                    answer=answer,
-                    metadata={"task": task, **metadata},
-                )
-            )
-
         if fill is not None:
             fill_clamped = float(max(0.0, min(100.0, fill)))
-            add(
-                "fill_percentage",
-                round(fill_clamped, 1),
-                {"derived_fill_percentage": round(fill_clamped, 6)},
+            annotations.append(
+                add(
+                    task="fill_percentage",
+                    answer=round(fill_clamped, 1),
+                    metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+                )
             )
             # A pragmatic definition: >~empty threshold implies liquid present.
-            add(
-                "liquid_presence",
-                "YES" if fill_clamped > 1.0 else "NO",
-                {"derived_fill_percentage": round(fill_clamped, 6)},
+            annotations.append(
+                add(
+                    task="liquid_presence",
+                    answer="YES" if fill_clamped > 1.0 else "NO",
+                    metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+                )
             )
 
         return annotations

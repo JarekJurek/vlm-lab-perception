@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
+from .prompts import PromptBank
+
 JsonPrimitive = Union[str, int, float, bool, None]
 JsonValue = Union[JsonPrimitive, List["JsonValue"], Dict[str, "JsonValue"]]
 
@@ -41,6 +43,35 @@ class TLGAnnotation:
         if self.choices is None:
             d.pop("choices", None)
         return d
+
+
+def make_tlg_annotation(
+    prompt_bank: PromptBank,
+    *,
+    dataset: str,
+    task: str,
+    image_id: str,
+    answer: Any,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> TLGAnnotation:
+    """Create a `TLGAnnotation` using the PromptBank as a source of truth.
+
+    This keeps dataset loaders concise and consistent.
+    """
+
+    spec = prompt_bank.get(str(dataset), str(task))
+    md: Dict[str, Any] = dict(metadata or {})
+    md["task"] = str(task)
+
+    return TLGAnnotation(
+        image_id=str(image_id),
+        dataset=str(dataset),
+        task_type=str(spec.get("task_type", task)),
+        question=str(spec["question"]),
+        choices=spec.get("choices"),
+        answer=answer,
+        metadata=md,
+    )
 
 
 def discretize_fill_level_ordinal(fill_percentage: float) -> str:
