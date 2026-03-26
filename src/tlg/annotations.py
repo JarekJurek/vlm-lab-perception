@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
@@ -9,7 +10,10 @@ JsonPrimitive = Union[str, int, float, bool, None]
 JsonValue = Union[JsonPrimitive, List["JsonValue"], Dict[str, "JsonValue"]]
 
 
-@dataclass(frozen=True, slots=True)
+_DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
+
+
+@dataclass(frozen=True, **_DATACLASS_KWARGS)
 class TLGAnnotation:
     """Standardized VQA-style annotation.
 

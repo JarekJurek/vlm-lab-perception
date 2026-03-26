@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -26,7 +27,10 @@ PromptDefsDict = Mapping[str, PromptSpec]
 DatasetAssignmentsDict = Mapping[str, DatasetPromptAssignment]
 
 
-@dataclass(frozen=True, slots=True)
+_DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
+
+
+@dataclass(frozen=True, **_DATACLASS_KWARGS)
 class PromptBank:
     """YAML-backed prompt bank.
 

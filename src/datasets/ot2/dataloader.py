@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import re
 from dataclasses import dataclass
 from functools import partial
@@ -14,7 +15,10 @@ _DEFAULT_SPLITS: Tuple[str, ...] = ("train", "valid", "test")
 _SEQ_RE = re.compile(r"^(?P<base>.*)_(?P<idx>\d+)$")
 
 
-@dataclass(frozen=True, slots=True)
+_DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
+
+
+@dataclass(frozen=True, **_DATACLASS_KWARGS)
 class YoloBox:
     cls: int
     xc: float

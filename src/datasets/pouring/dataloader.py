@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from dataclasses import dataclass
@@ -15,7 +16,10 @@ _RGB_JPG_RE = re.compile(r"^rgb_(?P<idx>\d+)$")
 _EMPTY_CUP_RE = re.compile(r"^empty_cup_(?P<idx>\d+)(?:_glass)?$")
 
 
-@dataclass(frozen=True, slots=True)
+_DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
+
+
+@dataclass(frozen=True, **_DATACLASS_KWARGS)
 class _Entry:
     split: str
     video_id: str
