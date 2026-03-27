@@ -74,9 +74,9 @@ def run_task(
     mask=None,
 ) -> str:
     """Run a single VLM task.
+    from PIL import Image, UnidentifiedImageError
     
     Args:
-        model: Qwen3-VL model.
         processor: Qwen3-VL processor.
         image: RGB image of the container.
         prompt: Task prompt text.
@@ -141,25 +141,28 @@ def test_sample(
     annotations: List[TLGAnnotation],
 ) -> Dict[str, str]:
     """Test all tasks on a single sample.
-    
+
     Args:
         model: Qwen3-VL model.
         processor: Qwen3-VL processor.
         sample: Dataset sample containing 'rgb_image'.
-    
+
     Returns:
         Dictionary mapping task names to model responses.
     """
-    from PIL import Image
+
+    from PIL import Image, UnidentifiedImageError
+
     rgb_path = sample.get("rgb_image")
     if rgb_path is not None:
-        rgb_image = Image.open(rgb_path).convert("RGB")
+        try:
+            rgb_image = Image.open(rgb_path).convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as e:
+            raise OSError(f"Failed to open RGB image: {rgb_path} ({e})") from e
     else:
         rgb_array = sample.get("rgb")
         if rgb_array is None:
-            raise FileNotFoundError(
-                "Input_RGBImage.png or Input_RGBImage.npy not found for sample."
-            )
+            raise FileNotFoundError("Input_RGBImage.png or Input_RGBImage.npy not found for sample.")
         if rgb_array.shape[0] in (1, 3, 4):
             rgb_array = rgb_array.transpose(1, 2, 0)
         rgb_image = Image.fromarray(rgb_array.astype("uint8"))
@@ -167,16 +170,18 @@ def test_sample(
     mask_image = None
     mask_path = sample.get("mask_image")
     if mask_path is not None:
-        mask_image = Image.open(mask_path).convert("RGB")
+        try:
+            mask_image = Image.open(mask_path).convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
+            mask_image = None
 
     results: Dict[str, str] = {}
-
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  Running task: {task_name}...")
         response = run_task(model, processor, rgb_image, ann.question, mask=mask_image)
         results[task_name] = response
-    
+
     return results
 
 
@@ -389,7 +394,7 @@ def main():
             idx = j + 1
             try:
                 sample = dataset[idx0]
-            except FileNotFoundError as e:
+            except (FileNotFoundError, OSError, SyntaxError) as e:
                 print(f"Failed to load sample index={idx0}: {e}")
                 # In dry-run we don't want a missing file to crash the whole script.
                 if args.dry_run:
@@ -422,9 +427,11 @@ def main():
                 sample_no_mask.pop("mask_image", None)
                 sample = sample_no_mask
 
-            results = test_sample(model, processor, sample, annotations)
-
-            # Score against ground truth.
+            try:
+                results = test_sample(model, processor, sample, annotations)
+            except (FileNotFoundError, OSError, SyntaxError) as e:
+                print(f"Failed to load images for sample index={idx0}: {e}")
+                continue
             ds_stats = per_dataset_stats.setdefault(dataset_name, {})
             for ann in annotations:
                 task = str(ann.metadata.get("task", ann.task_type))
