@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
@@ -24,6 +25,7 @@ class DTLDDataset:
         root: Union[str, Path],
         scene_ids: Optional[Iterable[str]] = None,
         rgb_only: bool = True,
+        skip_bad_scenes: bool = True,
         prompt_bank: Optional[PromptBank] = None,
     ) -> None:
         self.root = Path(root)
@@ -32,6 +34,7 @@ class DTLDDataset:
 
         self._scene_ids = list(scene_ids) if scene_ids is not None else self._discover_scene_ids()
         self._rgb_only = rgb_only
+        self._skip_bad_scenes = bool(skip_bad_scenes)
         self._prompt_bank = prompt_bank or PromptBank.default()
         self._scene_cache: Dict[str, Dict[str, object]] = {}
         self._entries = self._build_entries()
@@ -50,8 +53,20 @@ class DTLDDataset:
         if not liquid_path.exists():
             raise FileNotFoundError(f"Missing annotation file: {liquid_path}")
 
-        with liquid_path.open("r", encoding="utf-8") as f:
-            liquid = cast(Dict[str, List[Dict[str, Any]]], json.load(f))
+        try:
+            with liquid_path.open("r", encoding="utf-8") as f:
+                liquid = cast(Dict[str, List[Dict[str, Any]]], json.load(f))
+        except json.JSONDecodeError as e:
+            size = None
+            try:
+                size = liquid_path.stat().st_size
+            except OSError:
+                size = None
+            raise json.JSONDecodeError(
+                f"{e.msg} (file={liquid_path}, size_bytes={size})",
+                e.doc,
+                e.pos,
+            ) from e
 
         info = None
         if info_path.exists():
@@ -73,7 +88,16 @@ class DTLDDataset:
             if not liquid_path.exists():
                 continue
 
-            scene_data = self._load_scene_annotations(scene_id)
+            try:
+                scene_data = self._load_scene_annotations(scene_id)
+            except json.JSONDecodeError as e:
+                if not self._skip_bad_scenes:
+                    raise
+                warnings.warn(
+                    f"Skipping DTLD scene_id={scene_id!r}: failed to parse {liquid_path} ({e})",
+                    RuntimeWarning,
+                )
+                continue
             liquid = cast(Dict[str, List[Dict[str, Any]]], scene_data["liquid"])
             for frame_key, objects in liquid.items():
                 frame_id = int(frame_key)
