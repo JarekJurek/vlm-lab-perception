@@ -10,6 +10,7 @@ liquid-container datasets:
 import argparse
 import json
 import random
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -33,8 +34,10 @@ MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
 MAX_NEW_TOKENS = 256
 
 
+_SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
+
+
 DATA_ROOTS = {
-    # Pass the base dataset dir; loader will auto-use `processed/`.
     "labliquidvision": Path("data") / "LabLiquidVision",
     "glasses": Path("data") / "glasses_in_the_wild" / "glasses_in_the_wild_1000",
     "dtld": Path("data") / "DTLD_dataset",
@@ -44,7 +47,7 @@ DATA_ROOTS = {
 }
 
 
-def load_model():
+def load_model(*, viz_attn: bool = False):
     """Load Qwen3-VL model and processor."""
     import torch
     from transformers import AutoModelForImageTextToText, AutoProcessor
@@ -54,12 +57,17 @@ def load_model():
     print(f"Device: {device}")
     
     processor = AutoProcessor.from_pretrained(MODEL_NAME)
-    
-    model = AutoModelForImageTextToText.from_pretrained(
-        MODEL_NAME,
-        dtype=torch.float16,
-        device_map="auto"
-    ).eval()
+
+    model_kwargs: Dict[str, object] = {
+        "dtype": torch.float16,
+        "device_map": "auto",
+    }
+    if viz_attn:
+        # Some attention backends don't materialize attention weights.
+        # When visualizing, prefer an implementation that can return weights.
+        model_kwargs["attn_implementation"] = "eager"
+
+    model = AutoModelForImageTextToText.from_pretrained(MODEL_NAME, **model_kwargs).eval()
     
     print("Model loaded successfully.")
     
@@ -72,6 +80,12 @@ def run_task(
     image,
     prompt: str,
     mask=None,
+    *,
+    dataset_name: str = "",
+    sample_id: str = "",
+    task_name: str = "",
+    viz_attn: bool = False,
+    viz_out_dir: Optional[Path] = None,
 ) -> str:
     """Run a single VLM task.
     from PIL import Image, UnidentifiedImageError
@@ -86,6 +100,146 @@ def run_task(
         Model's text response.
     """
     import torch
+
+    def _warn(msg: str) -> None:
+        prefix = "[viz-attn]"
+        ctx = ""
+        if dataset_name or sample_id or task_name:
+            ctx = f" dataset={dataset_name!r} sample_id={sample_id!r} task={task_name!r}"
+        print(f"{prefix}{ctx} {msg}")
+
+    def _get_image_token_id() -> Optional[int]:
+        tok = getattr(processor, "tokenizer", None)
+        if tok is None:
+            return None
+        # Many VLM tokenizers expose a direct id.
+        for attr in ("image_token_id", "image_pad_token_id"):
+            val = getattr(tok, attr, None)
+            if isinstance(val, int):
+                return int(val)
+        # Try to infer from additional special tokens.
+        candidates: List[str] = []
+        for t in getattr(tok, "additional_special_tokens", []) or []:
+            ts = str(t)
+            if "image" in ts.lower():
+                candidates.append(ts)
+        if candidates:
+            preferred = None
+            for key in ("image_pad", "image", "img"):
+                for c in candidates:
+                    if key in c.lower():
+                        preferred = c
+                        break
+                if preferred is not None:
+                    break
+            token = preferred or candidates[0]
+            try:
+                token_id = tok.convert_tokens_to_ids(token)
+                if isinstance(token_id, int) and token_id >= 0:
+                    return int(token_id)
+            except Exception:
+                return None
+        return None
+
+    def _select_query_index(
+        seq_1d: "torch.Tensor",
+        prompt_len: int,
+        eos_token_id: Optional[int],
+        pad_token_id: Optional[int],
+    ) -> int:
+        # Choose the last non-(eos/pad) generated token if possible.
+        last = int(seq_1d.numel()) - 1
+        i = last
+        while i >= prompt_len:
+            tid = int(seq_1d[i].item())
+            if pad_token_id is not None and tid == int(pad_token_id):
+                i -= 1
+                continue
+            if eos_token_id is not None and tid == int(eos_token_id):
+                i -= 1
+                continue
+            return i
+        return last
+
+    def _infer_grid_hw(n: int) -> Optional[tuple[int, int]]:
+        if n <= 0:
+            return None
+        side = int(round(n ** 0.5))
+        if side * side == n:
+            return side, side
+        return None
+
+    def _is_perfect_square(n: int) -> Optional[int]:
+        if n <= 0:
+            return None
+        r = int(round(n ** 0.5))
+        return r if r * r == n else None
+
+    def _infer_grid_hw_from_aspect(n: int, *, aspect: Optional[float]) -> Optional[tuple[int, int]]:
+        """Find (h, w) such that h*w == n and h/w ~= aspect.
+
+        Falls back to any factor pair if aspect is missing.
+        """
+        if n <= 0:
+            return None
+        if aspect is not None and aspect <= 0:
+            aspect = None
+
+        best = None
+        best_err = None
+        r = int(n ** 0.5)
+        for h in range(1, r + 1):
+            if n % h != 0:
+                continue
+            w = n // h
+            for hh, ww in ((h, w), (w, h)):
+                if aspect is None:
+                    return int(hh), int(ww)
+                err = abs((float(hh) / float(ww)) - float(aspect))
+                if best is None or best_err is None or err < best_err:
+                    best = (int(hh), int(ww))
+                    best_err = err
+        return best
+
+    def _save_overlay_png(
+        *,
+        rgb_pil,
+        heatmap_hw,
+        out_path: Path,
+        alpha: float = 0.65,
+        cmap: str = "inferno",
+    ) -> None:
+        import numpy as np
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from PIL import Image
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        heat = np.asarray(heatmap_hw, dtype=np.float32)
+        if heat.ndim != 2:
+            raise ValueError(f"Expected 2D heatmap, got shape={heat.shape}")
+
+        hmin = float(heat.min())
+        hmax = float(heat.max())
+        if hmax > hmin:
+            heat = (heat - hmin) / (hmax - hmin)
+        else:
+            heat = np.zeros_like(heat, dtype=np.float32)
+
+        heat_img = Image.fromarray((heat * 255.0).astype("uint8"), mode="L")
+        resample = getattr(getattr(Image, "Resampling", Image), "BILINEAR", getattr(Image, "BILINEAR"))
+        heat_img = heat_img.resize(rgb_pil.size, resample=resample)
+        heat_up = np.asarray(heat_img, dtype=np.float32) / 255.0
+
+        fig, ax = plt.subplots(figsize=(rgb_pil.size[0] / 100.0, rgb_pil.size[1] / 100.0), dpi=100)
+        ax.imshow(rgb_pil)
+        ax.imshow(heat_up, cmap=cmap, alpha=float(alpha), vmin=0.0, vmax=1.0)
+        ax.axis("off")
+        fig.savefig(out_path, bbox_inches="tight", pad_inches=0)
+        plt.close(fig)
 
     # Build content list (image placeholders) and images list
     content = [{"type": "image"}]
@@ -114,22 +268,236 @@ def run_task(
     ).to(model.device)
     
     # Generate
+    gen_out = None
     with torch.no_grad():
-        output = model.generate(
-            **inputs,
-            max_new_tokens=MAX_NEW_TOKENS,
-            do_sample=False
-        )
+        if viz_attn:
+            gen_out = model.generate(
+                **inputs,
+                max_new_tokens=MAX_NEW_TOKENS,
+                do_sample=False,
+                return_dict_in_generate=True,
+                output_attentions=True,
+            )
+            output_ids = gen_out.sequences
+        else:
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=MAX_NEW_TOKENS,
+                do_sample=False
+            )
     
     # Decode
     response = processor.batch_decode(
-        output,
+        output_ids,
         skip_special_tokens=True
     )[0]
     
     # Extract just the answer (remove the prompt echo if present)
     if prompt in response:
         response = response.split(prompt)[-1].strip()
+
+    # Attention visualization (opt-in)
+    if viz_attn and viz_out_dir is not None:
+        try:
+            img_token_id = _get_image_token_id()
+            if img_token_id is None:
+                _warn("Could not resolve image token id; skipping viz for this task.")
+                return response
+
+            prompt_ids = inputs.get("input_ids")
+            if prompt_ids is None or getattr(prompt_ids, "ndim", None) != 2 or int(prompt_ids.shape[0]) != 1:
+                _warn(f"Unexpected input_ids shape={getattr(prompt_ids, 'shape', None)}; skipping viz.")
+                return response
+            prompt_len = int(prompt_ids.shape[1])
+
+            # Find image-token positions in the prompt only.
+            img_positions_all = (prompt_ids[0] == int(img_token_id)).nonzero(as_tuple=False).flatten().tolist()
+            if not img_positions_all:
+                _warn("No image token positions found in prompt; skipping viz.")
+                return response
+
+            grid = inputs.get("image_grid_thw")
+            t_raw = h_raw = w_raw = None
+            t_i = h_i = w_i = 1
+            if grid is not None:
+                try:
+                    grid0 = grid[0].tolist() if hasattr(grid, "__getitem__") else None
+                    if isinstance(grid0, (list, tuple)) and len(grid0) >= 3:
+                        t_raw, h_raw, w_raw = int(grid0[0]), int(grid0[1]), int(grid0[2])
+                except Exception:
+                    t_raw = h_raw = w_raw = None
+
+            n_img1 = None
+            if (
+                isinstance(t_raw, int)
+                and isinstance(h_raw, int)
+                and isinstance(w_raw, int)
+                and t_raw > 0
+                and h_raw > 0
+                and w_raw > 0
+            ):
+                n_img1 = int(t_raw * h_raw * w_raw)
+            if n_img1 is None:
+                # If multiple images were provided (e.g. mask), try splitting evenly.
+                n_imgs = max(1, int(len(images)))
+                if n_imgs > 1 and len(img_positions_all) % n_imgs == 0:
+                    per = int(len(img_positions_all) // n_imgs)
+                    aspect = None
+                    hw = _infer_grid_hw_from_aspect(per, aspect=aspect)
+                    if hw is not None:
+                        t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
+                        n_img1 = int(h_i * w_i)
+                if n_img1 is None:
+                    # Last resort: factor the token count.
+                    hw = _infer_grid_hw_from_aspect(len(img_positions_all), aspect=None)
+                    if hw is None:
+                        _warn("Could not infer image grid size (missing image_grid_thw); skipping viz.")
+                        return response
+                    t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
+                    n_img1 = int(h_i * w_i)
+            else:
+                assert t_raw is not None and h_raw is not None and w_raw is not None
+                t_i, h_i, w_i = int(t_raw), int(h_raw), int(w_raw)
+
+                # Reconcile expected token count from `image_grid_thw` with actual image-token count.
+                # Empirically, Qwen-VL often uses a downsampled token grid (e.g. 30x40 -> 15x20).
+                # Use the *total* image-token count if multiple images are present.
+                expected_total = None
+                try:
+                    if grid is not None and hasattr(grid, "shape") and int(grid.shape[0]) >= 1:
+                        # Sum t*h*w over all images if available.
+                        exp = 0
+                        for i in range(int(grid.shape[0])):
+                            gi = grid[i].tolist()
+                            if isinstance(gi, (list, tuple)) and len(gi) >= 3:
+                                exp += int(gi[0]) * int(gi[1]) * int(gi[2])
+                        expected_total = int(exp) if exp > 0 else None
+                except Exception:
+                    expected_total = None
+
+                actual_total = int(len(img_positions_all))
+                expected_for_ratio = int(expected_total) if isinstance(expected_total, int) and expected_total > 0 else int(n_img1)
+                if actual_total > 0 and expected_for_ratio > 0 and expected_for_ratio != actual_total:
+                    if expected_for_ratio % actual_total == 0:
+                        ratio = int(expected_for_ratio // actual_total)
+                        s = _is_perfect_square(ratio)
+                        if s is not None and s > 1:
+                            # Adjust grid dims by s if divisible.
+                            if h_i % s == 0 and w_i % s == 0:
+                                h_i //= s
+                                w_i //= s
+                                n_img1 = int(t_i * h_i * w_i)
+
+            img_positions = img_positions_all[:n_img1]
+            if len(img_positions) != n_img1:
+                exp_before = int(n_img1)
+                found = int(len(img_positions_all))
+                _warn(
+                    f"Image token count mismatch: expected {exp_before}, found {found}; "
+                    "using available tokens for first image."
+                )
+                n_img1 = len(img_positions)
+                aspect = None
+                if isinstance(h_raw, int) and isinstance(w_raw, int) and h_raw > 0 and w_raw > 0:
+                    aspect = float(h_raw) / float(w_raw)
+                hw = _infer_grid_hw_from_aspect(n_img1, aspect=aspect)
+                if hw is None:
+                    _warn("Could not reshape image tokens into a grid; skipping viz.")
+                    return response
+                t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
+
+            # Prefer attentions emitted by `generate()` to avoid an expensive (O(L^2)) full forward pass.
+            gen_attns = None
+            if gen_out is not None:
+                gen_attns = getattr(gen_out, "attentions", None)
+                if gen_attns is None:
+                    gen_attns = getattr(gen_out, "decoder_attentions", None)
+
+            attn_accum = None
+            n_used = 0
+
+            if isinstance(gen_attns, (tuple, list)) and gen_attns:
+                # `gen_attns` is typically a tuple over generated steps.
+                last_step = gen_attns[-1]
+                if isinstance(last_step, (tuple, list)) and last_step:
+                    for layer_attn in last_step:
+                        if layer_attn is None:
+                            continue
+                        # Expected: (bs, heads, 1, seq_len)
+                        if getattr(layer_attn, "ndim", None) != 4:
+                            continue
+                        a = layer_attn[0]  # (heads, 1, seq_len)
+                        if int(a.shape[-1]) <= max(img_positions):
+                            continue
+                        vec = a[:, 0, img_positions]  # (heads, n_img1)
+                        vec = vec.mean(dim=0)  # (n_img1,)
+                        attn_accum = vec if attn_accum is None else (attn_accum + vec)
+                        n_used += 1
+
+            # Fallback: do a prompt-only forward pass if generation didn't provide attentions.
+            if attn_accum is None or n_used == 0:
+                _warn("No usable attentions from generate(); falling back to prompt-only forward pass.")
+                fwd_inputs = dict(inputs)
+                fwd_inputs["attention_mask"] = torch.ones_like(prompt_ids, device=prompt_ids.device)
+                with torch.no_grad():
+                    out = model(
+                        **fwd_inputs,
+                        output_attentions=True,
+                        use_cache=False,
+                        return_dict=True,
+                    )
+
+                attns = getattr(out, "attentions", None)
+                if not isinstance(attns, (tuple, list)) or not attns:
+                    _warn("Model did not return attentions in fallback; skipping viz.")
+                    return response
+
+                # Use the last prompt token as query.
+                q_idx = int(prompt_len) - 1
+                for layer_attn in attns:
+                    if layer_attn is None:
+                        continue
+                    # Expected: (bs, heads, seq, seq)
+                    if getattr(layer_attn, "ndim", None) != 4:
+                        continue
+                    a = layer_attn[0]  # (heads, seq, seq)
+                    if int(a.shape[-1]) <= max(img_positions) or int(a.shape[-2]) <= q_idx:
+                        continue
+                    vec = a[:, q_idx, img_positions]  # (heads, n_img1)
+                    vec = vec.mean(dim=0)  # (n_img1,)
+                    attn_accum = vec if attn_accum is None else (attn_accum + vec)
+                    n_used += 1
+
+            if attn_accum is None or n_used == 0:
+                _warn("Could not reduce attentions into a vector; skipping viz.")
+                return response
+
+            attn_vec = (attn_accum / float(n_used)).detach().float().cpu()
+            if int(attn_vec.numel()) != int(t_i * h_i * w_i):
+                # Fallback to square reshape.
+                hw = _infer_grid_hw(int(attn_vec.numel()))
+                if hw is None:
+                    _warn("Attention vector length does not match grid; skipping viz.")
+                    return response
+                t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
+            attn_thw = attn_vec.view(int(t_i), int(h_i), int(w_i))
+            heat_hw = attn_thw.mean(dim=0)  # (h, w)
+
+            out_path = (
+                viz_out_dir
+                / _safe_name(dataset_name)
+                / _safe_name(sample_id)
+                / f"{_safe_name(task_name)}.png"
+            )
+            _save_overlay_png(rgb_pil=image, heatmap_hw=heat_hw.numpy(), out_path=out_path)
+        except torch.cuda.OutOfMemoryError as e:
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+            _warn(f"CUDA OOM while extracting attentions ({e}); continuing without viz.")
+        except Exception as e:
+            _warn(f"Failed to write visualization ({type(e).__name__}: {e}); continuing without viz.")
     
     return response
 
@@ -139,6 +507,11 @@ def test_sample(
     processor,
     sample: Dict[str, Any],
     annotations: List[TLGAnnotation],
+    *,
+    dataset_name: str,
+    sample_id: str,
+    viz_attn: bool,
+    viz_out_dir: Optional[Path],
 ) -> Dict[str, str]:
     """Test all tasks on a single sample.
 
@@ -179,10 +552,28 @@ def test_sample(
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  Running task: {task_name}...")
-        response = run_task(model, processor, rgb_image, ann.question, mask=mask_image)
+        response = run_task(
+            model,
+            processor,
+            rgb_image,
+            ann.question,
+            mask=mask_image,
+            dataset_name=dataset_name,
+            sample_id=sample_id,
+            task_name=task_name,
+            viz_attn=viz_attn,
+            viz_out_dir=viz_out_dir,
+        )
         results[task_name] = response
 
     return results
+
+
+def _safe_name(s: str) -> str:
+    s2 = _SAFE_NAME_RE.sub("_", str(s).strip())
+    s2 = s2.strip("_.")
+    return s2 or "unknown"
+
 
 
 def parse_args() -> argparse.Namespace:
@@ -244,6 +635,23 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help="Optional path to write aggregated metrics as JSON.",
+    )
+    parser.add_argument(
+        "--viz-attn",
+        action="store_true",
+        help=(
+            "If set, extract attention weights and write blended heatmap overlays (PNG). "
+            "This is a qualitative debug aid and may be slower / more memory intensive."
+        ),
+    )
+    parser.add_argument(
+        "--viz-out",
+        type=str,
+        default="",
+        help=(
+            "Output directory for attention visualizations (used with --viz-attn). "
+            "Files are written under {viz_out}/{dataset}/{sample_id}/{task}.png"
+        ),
     )
     parser.add_argument(
         "--tol",
@@ -352,9 +760,14 @@ def main():
     if args.dry_run:
         print("Dry run: validating dataset loading + standardized annotations (no model).")
 
+    viz_attn = bool(args.viz_attn) and (not args.dry_run)
+    viz_out_dir = Path(args.viz_out) if args.viz_out else None
+    if viz_attn and viz_out_dir is None:
+        raise ValueError("--viz-attn requires --viz-out")
+
     model = processor = None
     if not args.dry_run:
-        model, processor = load_model()
+        model, processor = load_model(viz_attn=viz_attn)
 
     pred_out_path = Path(args.predictions_out) if args.predictions_out else None
     metrics_out_path = Path(args.metrics_out) if args.metrics_out else None
@@ -428,7 +841,16 @@ def main():
                 sample = sample_no_mask
 
             try:
-                results = test_sample(model, processor, sample, annotations)
+                results = test_sample(
+                    model,
+                    processor,
+                    sample,
+                    annotations,
+                    dataset_name=dataset_name,
+                    sample_id=str(sample.get("id", "unknown")),
+                    viz_attn=viz_attn,
+                    viz_out_dir=viz_out_dir,
+                )
             except (FileNotFoundError, OSError, SyntaxError) as e:
                 print(f"Failed to load images for sample index={idx0}: {e}")
                 continue
