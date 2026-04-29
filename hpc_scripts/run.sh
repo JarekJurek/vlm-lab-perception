@@ -3,7 +3,7 @@
 #BSUB -J attn_5
 
 ### --------------- queue name ----------------
-#BSUB -q gpuv100
+#BSUB -q gpua100
 
 ### --------------- GPU request ---------------
 #BSUB -gpu "num=1:mode=exclusive_process"

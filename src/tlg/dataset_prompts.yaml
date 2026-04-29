@@ -30,6 +30,9 @@ ot2:
   - liquid_presence
   - tip_count
   - liquid_count
+  - fill_percentage
+  - fill_height_mm
 
 pouring:
   - liquid_presence
+  - fill_percentage
