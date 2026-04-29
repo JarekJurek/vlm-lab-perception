@@ -23,19 +23,23 @@ DATA_ROOTS = {
 }
 
 
-def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank) -> Any:
+def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank, include_depth: bool = False) -> Any:
     """Construct a dataset instance for a given dataset name.
 
     Args:
         dataset_name: Dataset identifier.
         data_root: Path to the dataset root.
         prompt_bank: Prompt bank used by dataset loaders.
+        include_depth: When *True*, depth arrays and other non-RGB modalities
+            are loaded alongside the RGB image.  Currently only affects
+            ``labliquidvision`` (which stores depth maps as ``.npy`` files).
+            Set this to *True* when using SD-VLM with ground-truth depth.
 
     Returns:
         Dataset instance.
     """
     if dataset_name == "labliquidvision":
-        return LabLiquidVisionDataset(data_root, rgb_only=True, prompt_bank=prompt_bank)
+        return LabLiquidVisionDataset(data_root, rgb_only=not include_depth, prompt_bank=prompt_bank)
     if dataset_name == "glasses":
         return GlassesInTheWildDataset(data_root, prompt_bank=prompt_bank)
     if dataset_name == "dtld":

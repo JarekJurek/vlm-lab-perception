@@ -237,6 +237,73 @@ python test_qwen_vl_tasks.py --datasets labliquidvision glasses dtld
 
 Default model in the script: `Qwen/Qwen3-VL-30B-A3B-Instruct`.
 
+### 3) Run SD-VLM tasks
+
+[SD-VLM](https://github.com/cpystan/SD-VLM) is a depth-encoded VLM built on LLaVA-1.5-7B.
+It can leverage the depth maps stored in LabLiquidVision (`Input_DepthMap.npy`) to provide
+spatially-aware reasoning.
+
+#### Install SD-VLM
+
+SD-VLM ships its own version of the `llava` package.  Install it from source:
+
+```bash
+git clone https://github.com/cpystan/SD-VLM.git
+cd SD-VLM
+pip install -e .
+```
+
+#### Run SD-VLM only
+
+```bash
+# Default: SD-VLM estimates depth internally from the RGB image
+python test_qwen_vl_tasks.py --model sdvlm --datasets labliquidvision
+
+# Use ground-truth depth maps from LabLiquidVision (Input_DepthMap.npy)
+python test_qwen_vl_tasks.py --model sdvlm --datasets labliquidvision --sdvlm-gt-depth
+
+# Use a local SD-VLM checkpoint and a local vision tower
+python test_qwen_vl_tasks.py \
+    --model sdvlm \
+    --datasets labliquidvision \
+    --sdvlm-model-path /path/to/SD-VLM-7B \
+    --sdvlm-vision-tower /path/to/clip-vit-large-patch14-336 \
+    --sdvlm-gt-depth
+```
+
+#### Run Qwen3-VL and SD-VLM side-by-side
+
+```bash
+python test_qwen_vl_tasks.py \
+    --model both \
+    --datasets labliquidvision \
+    --sdvlm-gt-depth \
+    --predictions-out results/preds.jsonl \
+    --metrics-out results/metrics.json
+```
+
+The `--model both` option loads both models, evaluates each sample with each model, and writes
+per-model metrics to the output files.  The `"model"` field in the JSONL predictions file
+distinguishes Qwen (`"qwen"`) from SD-VLM (`"sdvlm"`) rows.
+
+#### SD-VLM CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | `qwen` | Which model(s) to run: `qwen`, `sdvlm`, or `both` |
+| `--sdvlm-model-path` | `cpystan/SD-VLM-7B` | HuggingFace ID or local path for the SD-VLM checkpoint |
+| `--sdvlm-vision-tower` | `openai/clip-vit-large-patch14-336` | Vision encoder identifier |
+| `--sdvlm-gt-depth` | off | Use ground-truth depth from the dataset (`Input_DepthMap.npy`) |
+| `--sdvlm-no-depth` | off | Disable depth encoding entirely (`use_depth=False`) |
+
+#### Depth compatibility with LabLiquidVision
+
+LabLiquidVision provides per-sample depth maps stored as `.npy` files
+(`Input_DepthMap.npy`).  When `--sdvlm-gt-depth` is passed, the loader reads
+these arrays, normalises them to 8-bit grayscale, and passes them to SD-VLM as
+ground-truth depth images.  Without `--sdvlm-gt-depth`, SD-VLM estimates depth
+internally using Depth Anything V2.
+
 ## Notebooks
 
 Available preview notebooks:

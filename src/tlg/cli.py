@@ -8,14 +8,25 @@ from typing import Dict, List
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for the Qwen-VL evaluation script."""
-    parser = argparse.ArgumentParser(description="Run Qwen-VL tasks on liquid datasets")
+    """Parse CLI arguments for the VLM evaluation script."""
+    parser = argparse.ArgumentParser(description="Run VLM tasks on liquid datasets")
     parser.add_argument(
         "--datasets",
         nargs="+",
         choices=["labliquidvision", "glasses", "dtld", "pouring", "ot2"],
         default=["labliquidvision"],
         help="One or more datasets to evaluate.",
+    )
+    parser.add_argument(
+        "--model",
+        choices=["qwen", "sdvlm", "both"],
+        default="qwen",
+        help=(
+            "Which VLM(s) to run. "
+            "'qwen' (default): Qwen3-VL only. "
+            "'sdvlm': SD-VLM only (requires the llava package from SD-VLM). "
+            "'both': run Qwen3-VL and SD-VLM on every sample and report metrics for each."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -98,6 +109,32 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Override numeric tolerances for within-tolerance scoring, e.g. "
             "--tol fill_percentage=2.5 --tol fill_height_mm=10."
+        ),
+    )
+    # --- SD-VLM specific arguments ---
+    parser.add_argument(
+        "--sdvlm-model-path",
+        type=str,
+        default="cpystan/SD-VLM-7B",
+        help="HuggingFace model ID or local path for SD-VLM (default: cpystan/SD-VLM-7B).",
+    )
+    parser.add_argument(
+        "--sdvlm-vision-tower",
+        type=str,
+        default="openai/clip-vit-large-patch14-336",
+        help="Vision tower identifier for SD-VLM (default: openai/clip-vit-large-patch14-336).",
+    )
+    parser.add_argument(
+        "--sdvlm-no-depth",
+        action="store_true",
+        help="Disable depth encoding in SD-VLM (sets use_depth=False).",
+    )
+    parser.add_argument(
+        "--sdvlm-gt-depth",
+        action="store_true",
+        help=(
+            "Use ground-truth depth maps from the dataset instead of estimating depth "
+            "internally (only applicable for datasets that provide depth, e.g. labliquidvision)."
         ),
     )
     return parser.parse_args()

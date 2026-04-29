@@ -44,3 +44,21 @@ python3 test_qwen_vl_tasks.py \
     --viz-out bakery/run5/attn \
     --predictions-out bakery/run5/preds.jsonl \
     --metrics-out bakery/run5/metrics.json
+
+# Example: run SD-VLM only on LabLiquidVision with ground-truth depth
+# python3 test_qwen_vl_tasks.py \
+#     --model sdvlm \
+#     --datasets labliquidvision \
+#     --sdvlm-gt-depth \
+#     --max-samples 4 \
+#     --predictions-out bakery/run_sdvlm/preds.jsonl \
+#     --metrics-out bakery/run_sdvlm/metrics.json
+
+# Example: run both Qwen and SD-VLM side-by-side on LabLiquidVision
+# python3 test_qwen_vl_tasks.py \
+#     --model both \
+#     --datasets labliquidvision \
+#     --sdvlm-gt-depth \
+#     --max-samples 4 \
+#     --predictions-out bakery/run_both/preds.jsonl \
+#     --metrics-out bakery/run_both/metrics.json
