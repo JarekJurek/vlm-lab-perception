@@ -253,9 +253,7 @@ def write_attention_overlay(
             / _safe_name(sample_id)
             / _safe_name(task_name)
         )
-        _save_original_png(rgb_pil=image, out_path=Path(f"{base_path}.original.png"))
-        _save_heatmap_png(heatmap_hw=heat_hw.numpy(), out_path=Path(f"{base_path}.heatmap.png"), size=image.size)
-        _save_overlay_png(rgb_pil=image, heatmap_hw=heat_hw.numpy(), out_path=Path(f"{base_path}.overlay.png"))
+        _save_overlay_png(rgb_pil=image, heatmap_hw=heat_hw.numpy(), out_path=Path(f"{base_path}.png"))
     except torch.cuda.OutOfMemoryError as exc:
         try:
             torch.cuda.empty_cache()
@@ -321,7 +319,8 @@ def _collect_generated_token_attention(
                     continue
                 if int(layer_attn.shape[-2]) < 1:
                     continue
-                vec = layer_attn[0, :, 0, img_positions]
+                q_idx = int(layer_attn.shape[-2]) - 1
+                vec = layer_attn[0, :, q_idx, img_positions]
                 vec = vec.mean(dim=0)
                 layer_vecs.append(vec)
 
@@ -476,36 +475,6 @@ def _save_overlay_png(
     fig, ax = plt.subplots(figsize=(rgb_pil.size[0] / 100.0, rgb_pil.size[1] / 100.0), dpi=100)
     ax.imshow(rgb_pil)
     ax.imshow(heat_up, cmap=cmap, alpha=float(alpha), vmin=0.0, vmax=1.0)
-    ax.axis("off")
-    fig.savefig(out_path, bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
-
-
-def _save_original_png(*, rgb_pil, out_path: Path) -> None:
-    """Save the original image as a PNG."""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    rgb_pil.save(out_path, format="PNG")
-
-
-def _save_heatmap_png(*, heatmap_hw, out_path: Path, size, cmap: str = "inferno") -> None:
-    """Save a heatmap-only PNG resized to the original image size."""
-    import numpy as np
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from PIL import Image
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    heat = _normalize_heatmap(heatmap_hw)
-    heat_img = Image.fromarray((heat * 255.0).astype("uint8"), mode="L")
-    resample = getattr(getattr(Image, "Resampling", Image), "BILINEAR", getattr(Image, "BILINEAR"))
-    heat_img = heat_img.resize(size, resample=resample)
-    heat_up = np.asarray(heat_img, dtype=np.float32) / 255.0
-
-    fig, ax = plt.subplots(figsize=(size[0] / 100.0, size[1] / 100.0), dpi=100)
-    ax.imshow(heat_up, cmap=cmap, vmin=0.0, vmax=1.0)
     ax.axis("off")
     fig.savefig(out_path, bbox_inches="tight", pad_inches=0)
     plt.close(fig)
