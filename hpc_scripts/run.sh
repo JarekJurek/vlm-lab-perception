@@ -1,6 +1,6 @@
 #!/bin/bash
 ### --------------- job name ------------------
-#BSUB -J test_run2
+#BSUB -J attn_5
 
 ### --------------- queue name ----------------
 #BSUB -q gpuv100
@@ -9,18 +9,18 @@
 #BSUB -gpu "num=1:mode=exclusive_process"
 
 ### --------------- number of cores -----------
-#BSUB -n 6
+#BSUB -n 4
 #BSUB -R "span[hosts=1]"
 
 ### --------------- CPU memory requirements ---
-#BSUB -R "rusage[mem=8GB]"
+#BSUB -R "rusage[mem=2GB]"
 
 ### --------------- wall-clock time ---------------
-#BSUB -W 23:59
+#BSUB -W 0:45
 
 ### --------------- output and error files ---------------
-#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/test_run2_%J.out
-#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/test_run2_%J.err
+#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz5_%J.out
+#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz5_%J.err
     
 ### --------------- send email notifications -------------
 #BSUB -u s242911@dtu.dk
@@ -28,6 +28,19 @@
 #BSUB -N
 
 ### --------------- Load environment and run Python script ---------------
-source /zhome/a2/c/213547/vlm-lab-perception/venv/bin/activate
+source /zhome/a2/c/213547/hypersight/venv/bin/activate
+
 export HF_HOME="/zhome/a2/c/213547/work3/master_thesis/models/"
-python3 /zhome/a2/c/213547/vlm-lab-perception/test_qwen_vl_tasks.py --datasets labliquidvision glasses
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=4
+export OPENBLAS_NUM_THREADS=4
+export NUMEXPR_NUM_THREADS=4
+
+python3 test_qwen_vl_tasks.py \
+    --datasets labliquidvision glasses dtld pouring ot2 \
+    --max-samples 4 \
+    --viz-attn \
+    --viz-attn-mode first_answer_token \
+    --viz-out bakery/run5/attn \
+    --predictions-out bakery/run5/preds.jsonl \
+    --metrics-out bakery/run5/metrics.json
