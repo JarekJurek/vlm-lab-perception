@@ -1,6 +1,6 @@
 #!/bin/bash
 ### --------------- job name ------------------
-#BSUB -J attn_2_a
+#BSUB -J attn_5
 
 ### --------------- queue name ----------------
 #BSUB -q gpua100
@@ -16,11 +16,11 @@
 #BSUB -R "rusage[mem=2GB]"
 
 ### --------------- wall-clock time ---------------
-#BSUB -W 0:20
+#BSUB -W 0:45
 
 ### --------------- output and error files ---------------
-#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz2V_%J.out
-#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz2V_%J.err
+#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz5_%J.out
+#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz5_%J.err
     
 ### --------------- send email notifications -------------
 #BSUB -u s242911@dtu.dk
@@ -38,8 +38,9 @@ export NUMEXPR_NUM_THREADS=4
 
 python3 test_qwen_vl_tasks.py \
     --datasets labliquidvision glasses dtld pouring ot2 \
-    --max-samples 3 \
+    --max-samples 4 \
     --viz-attn \
-    --viz-out bakery/run2V/attn \
-    --predictions-out bakery/run2V/preds.jsonl \
-    --metrics-out bakery/run2V/metrics.json
+    --viz-attn-mode first_answer_token \
+    --viz-out bakery/run5/attn \
+    --predictions-out bakery/run5/preds.jsonl \
+    --metrics-out bakery/run5/metrics.json
