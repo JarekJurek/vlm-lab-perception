@@ -26,6 +26,14 @@ are set on the model object after loading:
 LabLiquidVision provides ``Input_DepthMap.npy`` for every sample, so GT depth
 is usable via ``--sdvlm-gt-depth``.  All other datasets fall back to the
 internally estimated depth.
+
+Attention visualization
+-----------------------
+Pass ``viz_attn=True`` and a ``viz_out_dir`` path to ``run_task_sdvlm`` to
+obtain per-task attention heatmap overlays.  The model is loaded with the
+standard (eager) attention implementation so that attention weights are
+materialised.  The visualization logic lives in
+:func:`tlg.attention_viz.write_attention_overlay_sdvlm`.
 """
 
 from __future__ import annotations
@@ -37,6 +45,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from tlg.annotations import TLGAnnotation
+from tlg.attention_viz import write_attention_overlay_sdvlm
 
 
 SDVLM_MODEL_NAME = "cpystan/SD-VLM-7B"
@@ -66,6 +75,7 @@ def load_sdvlm_model(
     *,
     use_depth: bool = True,
     gt_depth: bool = False,
+    viz_attn: bool = False,
 ) -> Tuple[Any, Any, Any]:
     """Load SD-VLM model, tokenizer, and image processor.
 
@@ -75,6 +85,8 @@ def load_sdvlm_model(
         use_depth: Whether depth encoding is active.
         gt_depth: When *True* the caller must supply ground-truth depth images.
             When *False* depth is estimated internally from the RGB image.
+        viz_attn: When *True* load the model with ``attn_implementation="eager"``
+            so that attention weights are materialised during generation.
 
     Returns:
         Tuple of (model, tokenizer, image_processor).
@@ -89,14 +101,20 @@ def load_sdvlm_model(
     disable_torch_init()
 
     print(f"Loading SD-VLM model: {model_path}")
-    print(f"  use_depth={use_depth}  gt_depth={gt_depth}")
+    print(f"  use_depth={use_depth}  gt_depth={gt_depth}  viz_attn={viz_attn}")
 
     model_name = get_model_name_from_path(model_path)
+
+    load_kwargs: Dict[str, Any] = {}
+    if viz_attn:
+        load_kwargs["attn_implementation"] = "eager"
+
     tokenizer, model, image_processor, _ctx_len = load_pretrained_model(
         model_path=model_path,
         model_base=None,
         model_name=model_name,
         mm_vision_tower=vision_tower,
+        **load_kwargs,
     )
 
     model.to(torch.float16)
@@ -151,6 +169,9 @@ def run_task_sdvlm(
     dataset_name: str = "",
     sample_id: str = "",
     task_name: str = "",
+    viz_attn: bool = False,
+    viz_out_dir: Optional[Path] = None,
+    viz_attn_mode: str = "all",
 ) -> str:
     """Run a single VLM task with SD-VLM.
 
@@ -165,6 +186,10 @@ def run_task_sdvlm(
         dataset_name: Dataset name for logging.
         sample_id: Sample identifier for logging.
         task_name: Task name for logging.
+        viz_attn: Whether to extract attention weights and write heatmap overlays.
+        viz_out_dir: Output directory for attention visualizations.
+        viz_attn_mode: Which generated tokens to use for visualization –
+            ``"all"``, ``"first_answer_token"``, or ``"mcq_answer"``.
 
     Returns:
         Model's text response.
@@ -204,21 +229,56 @@ def run_task_sdvlm(
     input_ids = input_ids.to(device)
     image_tensor = image_tensor.unsqueeze(0).half().to(device)
 
+    gen_out = None
     with torch.inference_mode():
-        output_ids = model.generate(
-            input_ids,
-            images=image_tensor,
-            image_sizes=[image.size],
-            do_sample=False,
-            temperature=0,
-            top_p=None,
-            num_beams=1,
-            ori_imgs=[ori_img],
-            max_new_tokens=MAX_NEW_TOKENS,
-            use_cache=True,
-        )
+        if viz_attn:
+            gen_out = model.generate(
+                input_ids,
+                images=image_tensor,
+                image_sizes=[image.size],
+                do_sample=False,
+                temperature=0,
+                top_p=None,
+                num_beams=1,
+                ori_imgs=[ori_img],
+                max_new_tokens=MAX_NEW_TOKENS,
+                use_cache=True,
+                return_dict_in_generate=True,
+                output_attentions=True,
+            )
+            output_ids = gen_out.sequences
+        else:
+            output_ids = model.generate(
+                input_ids,
+                images=image_tensor,
+                image_sizes=[image.size],
+                do_sample=False,
+                temperature=0,
+                top_p=None,
+                num_beams=1,
+                ori_imgs=[ori_img],
+                max_new_tokens=MAX_NEW_TOKENS,
+                use_cache=True,
+            )
 
     response = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+
+    # Attention visualization (opt-in).
+    if viz_attn and viz_out_dir is not None:
+        write_attention_overlay_sdvlm(
+            model=model,
+            tokenizer=tokenizer,
+            input_ids=input_ids,
+            gen_out=gen_out,
+            output_ids=output_ids,
+            image=image,
+            dataset_name=dataset_name,
+            sample_id=sample_id,
+            task_name=task_name,
+            viz_out_dir=viz_out_dir,
+            viz_attn_mode=viz_attn_mode,
+        )
+
     return response
 
 
@@ -231,6 +291,9 @@ def test_sample_sdvlm(
     *,
     dataset_name: str,
     sample_id: str,
+    viz_attn: bool = False,
+    viz_out_dir: Optional[Path] = None,
+    viz_attn_mode: str = "all",
 ) -> Dict[str, str]:
     """Test all tasks on a single sample with SD-VLM.
 
@@ -242,8 +305,12 @@ def test_sample_sdvlm(
             or ``rgb`` (numpy array).  Optionally contains ``depth_map`` (numpy
             array) used when ``model.gt_depth`` is *True*.
         annotations: Standardised task annotations.
-        dataset_name: Dataset name for logging.
-        sample_id: Sample identifier for logging.
+        dataset_name: Dataset name for logging and visualization output.
+        sample_id: Sample identifier for logging and visualization output.
+        viz_attn: Whether to extract attention weights and write heatmap overlays.
+        viz_out_dir: Output directory for attention visualizations.
+        viz_attn_mode: Which generated tokens to use for visualization –
+            ``"all"``, ``"first_answer_token"``, or ``"mcq_answer"``.
 
     Returns:
         Dictionary mapping task names to model responses.
@@ -294,6 +361,9 @@ def test_sample_sdvlm(
             dataset_name=dataset_name,
             sample_id=sample_id,
             task_name=task_name,
+            viz_attn=viz_attn,
+            viz_out_dir=viz_out_dir,
+            viz_attn_mode=viz_attn_mode,
         )
         results[task_name] = response
 

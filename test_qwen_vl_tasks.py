@@ -72,6 +72,7 @@ def main():
                 vision_tower=args.sdvlm_vision_tower,
                 use_depth=not args.sdvlm_no_depth,
                 gt_depth=use_gt_depth,
+                viz_attn=viz_attn,
             )
 
     pred_out_path = Path(args.predictions_out) if args.predictions_out else None
@@ -198,6 +199,9 @@ def main():
                         annotations,
                         dataset_name=dataset_name,
                         sample_id=str(sample.get("id", "unknown")),
+                        viz_attn=viz_attn,
+                        viz_out_dir=viz_out_dir,
+                        viz_attn_mode=str(args.viz_attn_mode),
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
                     print(f"[SD-VLM] Failed to load images for sample index={idx0}: {e}")

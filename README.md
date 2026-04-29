@@ -304,6 +304,30 @@ these arrays, normalises them to 8-bit grayscale, and passes them to SD-VLM as
 ground-truth depth images.  Without `--sdvlm-gt-depth`, SD-VLM estimates depth
 internally using Depth Anything V2.
 
+#### Attention visualization for SD-VLM
+
+SD-VLM supports the same `--viz-attn` / `--viz-out` flags as Qwen3-VL.  The
+visualization logic lives in `attention_viz.py` and works by:
+
+1. Locating LLaVA's `IMAGE_TOKEN_INDEX` placeholder in the flat token sequence.
+2. Expanding it to the patch grid (576 tokens for the default 336 × 336 CLIP
+   ViT-L/14 vision tower; derived automatically from the model's config).
+3. Averaging attention weights from generated tokens over the patch grid and
+   upsampling the result to the original image resolution.
+
+```bash
+python test_qwen_vl_tasks.py \
+    --model sdvlm \
+    --datasets labliquidvision \
+    --sdvlm-gt-depth \
+    --viz-attn \
+    --viz-attn-mode first_answer_token \
+    --viz-out results/sdvlm_attn
+```
+
+The output PNGs follow the same directory structure as the Qwen visualizations:
+`{viz_out}/{dataset}/{sample_id}/{task}.png`.
+
 ## Notebooks
 
 Available preview notebooks:
