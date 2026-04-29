@@ -224,8 +224,9 @@ def main():
         pred_fh.close()
 
     # Print aggregated metrics per model.
+    active_models = {"qwen": run_qwen, "sdvlm": run_sdvlm}
     for model_key in ("qwen", "sdvlm"):
-        if (model_key == "qwen" and not run_qwen) or (model_key == "sdvlm" and not run_sdvlm):
+        if not active_models[model_key]:
             continue
         label = "Qwen" if model_key == "qwen" else "SD-VLM"
         print_stats(f"[{label}] Overall Metrics", overall_stats[model_key])

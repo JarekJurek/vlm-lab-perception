@@ -43,6 +43,9 @@ SDVLM_MODEL_NAME = "cpystan/SD-VLM-7B"
 SDVLM_VISION_TOWER = "openai/clip-vit-large-patch14-336"
 MAX_NEW_TOKENS = 256
 
+# Channel counts for (C, H, W) shaped arrays (grayscale, RGB, RGBA).
+_LEADING_CHANNEL_COUNTS = (1, 3, 4)
+
 
 def _require_llava() -> None:
     """Raise a helpful error if the SD-VLM / llava package is not installed."""
@@ -122,7 +125,7 @@ def depth_array_to_pil(depth_array: np.ndarray) -> Any:
     arr = np.asarray(depth_array, dtype=np.float32)
 
     # Flatten channel dim if present (C, H, W) -> (H, W).
-    if arr.ndim == 3 and arr.shape[0] in (1, 3, 4):
+    if arr.ndim == 3 and arr.shape[0] in _LEADING_CHANNEL_COUNTS:
         arr = arr[0]
 
     d_min, d_max = float(arr.min()), float(arr.max())
@@ -258,9 +261,9 @@ def test_sample_sdvlm(
         rgb_array = sample.get("rgb")
         if rgb_array is None:
             raise FileNotFoundError(
-                "Input_RGBImage.png or Input_RGBImage.npy not found for sample."
+                "RGB image data not found in sample (missing both 'rgb_image' path and 'rgb' array)."
             )
-        if rgb_array.shape[0] in (1, 3, 4):
+        if rgb_array.shape[0] in _LEADING_CHANNEL_COUNTS:
             rgb_array = rgb_array.transpose(1, 2, 0)
         rgb_image = Image.fromarray(rgb_array.astype("uint8"))
 
