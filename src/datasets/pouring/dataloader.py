@@ -8,6 +8,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
+import numpy as np
+
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 
@@ -67,6 +69,8 @@ class PouringDataset:
         splits: Sequence[str] = ("test",),
         include_empty_cup: bool = False,
         prompt_bank: Optional[PromptBank] = None,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
@@ -80,6 +84,13 @@ class PouringDataset:
             self._entries = self._resolve_ids(list(ids))
         else:
             self._entries = self._discover_entries()
+            
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            self._entries = [
+                self._entries[i]
+                for i in rng.permutation(len(self._entries))
+            ]
 
     def _discover_entries(self) -> List[_Entry]:
         entries: List[_Entry] = []

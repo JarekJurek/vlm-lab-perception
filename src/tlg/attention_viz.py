@@ -1,4 +1,12 @@
-"""Attention visualization helpers for Qwen-VL outputs."""
+"""Attention visualization helpers for VLM outputs.
+
+Supports two backends:
+- Qwen-VL: ``write_attention_overlay`` – uses the processor's ``image_grid_thw``
+  tensor to locate image tokens in the input sequence.
+- SD-VLM (LLaVA-1.5): ``write_attention_overlay_sdvlm`` – locates image tokens
+  via LLaVA's ``IMAGE_TOKEN_INDEX`` constant and the known patch count (576 for
+  a 336 × 336 image with a 14 × 14 patch stride).
+"""
 
 from __future__ import annotations
 
@@ -246,6 +254,169 @@ def write_attention_overlay(
             t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
         attn_thw = attn_vec.view(int(t_i), int(h_i), int(w_i))
         heat_hw = attn_thw.mean(dim=0)  # (h, w)
+
+        base_path = (
+            viz_out_dir
+            / _safe_name(dataset_name)
+            / _safe_name(sample_id)
+            / _safe_name(task_name)
+        )
+        _save_overlay_png(rgb_pil=image, heatmap_hw=heat_hw.numpy(), out_path=Path(f"{base_path}.png"))
+    except torch.cuda.OutOfMemoryError as exc:
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        _warn(f"CUDA OOM while extracting attentions ({exc}); continuing without viz.")
+    except Exception as exc:
+        _warn(f"Failed to write visualization ({type(exc).__name__}: {exc}); continuing without viz.")
+
+
+def write_attention_overlay_sdvlm(
+    *,
+    model,
+    tokenizer,
+    input_ids,
+    gen_out,
+    output_ids=None,
+    image,
+    dataset_name: str,
+    sample_id: str,
+    task_name: str,
+    viz_out_dir: Optional[Path],
+    viz_attn_mode: str = "all",
+) -> None:
+    """Write an attention heatmap overlay for a single SD-VLM (LLaVA-1.5) task.
+
+    SD-VLM is based on LLaVA-1.5 which encodes each image as a fixed grid of
+    N_PATCHES = (image_size / patch_size)² tokens that are inserted into the
+    sequence at the position of the ``IMAGE_TOKEN_INDEX`` placeholder.  For the
+    default 336 × 336 CLIP ViT-L/14 vision tower this gives 576 patch tokens.
+
+    The function derives the number of image tokens from the model's vision
+    tower configuration at runtime, so it adapts automatically to other CLIP
+    configurations without hard-coding 576.
+
+    Args:
+        model: SD-VLM (LLaVA-based) model.
+        tokenizer: LLaVA tokenizer, used for decoding generated tokens.
+        input_ids: Token ids fed into the model (before image expansion),
+            shape (1, seq_len).
+        gen_out: GenerateOutput returned by ``model.generate`` with
+            ``return_dict_in_generate=True, output_attentions=True``.
+        output_ids: Full generated token id sequence (batch, seq_len).
+            Defaults to ``gen_out.sequences`` when *None*.
+        image: PIL Image of the RGB input (used as overlay base).
+        dataset_name: Dataset name used in the output path.
+        sample_id: Sample identifier used in the output path.
+        task_name: Task name used in the output filename.
+        viz_out_dir: Output directory root.  If *None* the function is a no-op.
+        viz_attn_mode: Token selection strategy – ``"all"``,
+            ``"first_answer_token"``, or ``"mcq_answer"``.
+    """
+    if viz_out_dir is None:
+        return
+
+    import torch
+
+    def _warn(msg: str) -> None:
+        prefix = "[viz-attn/sdvlm]"
+        ctx = ""
+        if dataset_name or sample_id or task_name:
+            ctx = f" dataset={dataset_name!r} sample_id={sample_id!r} task={task_name!r}"
+        print(f"{prefix}{ctx} {msg}")
+
+    try:
+        # --- Resolve the number of image patch tokens ---
+        n_image_tokens: Optional[int] = None
+        try:
+            # LLaVA-1.5: model.model.vision_tower exposes mm_hidden_size and
+            # the underlying CLIP model which stores image_size and patch_size.
+            vt = getattr(model, "model", model)
+            vt = getattr(vt, "vision_tower", None)
+            if vt is not None:
+                clip_model = getattr(vt, "vision_tower", vt)
+                cfg = getattr(clip_model, "config", None)
+                if cfg is not None:
+                    img_size = int(getattr(cfg, "image_size", 336))
+                    patch_size = int(getattr(cfg, "patch_size", 14))
+                    n_image_tokens = (img_size // patch_size) ** 2
+        except Exception:
+            pass
+
+        if n_image_tokens is None:
+            # Fallback: standard CLIP ViT-L/14-336 produces 576 tokens.
+            n_image_tokens = 576
+            _warn(f"Could not read vision tower config; assuming {n_image_tokens} image tokens.")
+
+        # --- Find where IMAGE_TOKEN_INDEX sits in the flat input ---
+        try:
+            from llava.constants import IMAGE_TOKEN_INDEX
+        except ImportError:
+            IMAGE_TOKEN_INDEX = -200
+
+        if input_ids is None or getattr(input_ids, "ndim", None) != 2:
+            _warn("Unexpected input_ids shape; skipping viz.")
+            return
+
+        img_placeholder_positions = (input_ids[0] == int(IMAGE_TOKEN_INDEX)).nonzero(as_tuple=False).flatten()
+        if img_placeholder_positions.numel() == 0:
+            _warn("IMAGE_TOKEN_INDEX not found in input_ids; skipping viz.")
+            return
+
+        # After the model expands the image placeholder, each original token
+        # before the placeholder stays in place; the placeholder itself is
+        # replaced by n_image_tokens patch embeddings; tokens after shift right.
+        img_start = int(img_placeholder_positions[0].item())
+        img_positions = list(range(img_start, img_start + n_image_tokens))
+
+        # The expanded prompt length accounts for the token expansion.
+        n_prefix_tokens = int(input_ids.shape[1])
+        # Prefix tokens before image: img_start
+        # Image tokens: n_image_tokens  (replaces 1 placeholder)
+        # Remaining prefix tokens: n_prefix_tokens - img_start - 1
+        expanded_prompt_len = img_start + n_image_tokens + (n_prefix_tokens - img_start - 1)
+
+        if output_ids is None and gen_out is not None:
+            output_ids = getattr(gen_out, "sequences", None)
+
+        gen_attns = None
+        if gen_out is not None:
+            gen_attns = getattr(gen_out, "attentions", None)
+
+        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        pad_token_id = getattr(tokenizer, "pad_token_id", None)
+
+        attn_accum = _collect_generated_token_attention(
+            gen_attns=gen_attns,
+            output_ids=output_ids,
+            prompt_len=expanded_prompt_len,
+            img_positions=img_positions,
+            tokenizer=tokenizer,
+            eos_token_id=eos_token_id,
+            pad_token_id=pad_token_id,
+            viz_attn_mode=viz_attn_mode,
+            warn=_warn,
+        )
+
+        if attn_accum is None:
+            _warn("Could not reduce attentions into a vector; skipping viz.")
+            return
+
+        attn_vec = attn_accum.detach().float().cpu()
+        if int(attn_vec.numel()) != n_image_tokens:
+            _warn(
+                f"Attention vector length {attn_vec.numel()} != expected {n_image_tokens}; skipping viz."
+            )
+            return
+
+        # Reshape into a square patch grid (h, w).
+        hw = _infer_grid_hw(n_image_tokens)
+        if hw is None:
+            _warn(f"Cannot reshape {n_image_tokens} image tokens into a square grid; skipping viz.")
+            return
+        h_i, w_i = hw
+        heat_hw = attn_vec.view(h_i, w_i)
 
         base_path = (
             viz_out_dir

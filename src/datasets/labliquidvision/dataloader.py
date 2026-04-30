@@ -43,6 +43,8 @@ class LabLiquidVisionDataset:
         ids: Optional[Iterable[str]] = None,
         rgb_only: bool = False,
         prompt_bank: Optional[PromptBank] = None,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
     ) -> None:
         root_path = Path(root)
         if not root_path.exists():
@@ -57,9 +59,16 @@ class LabLiquidVisionDataset:
         else:
             self.root = root_path
 
-        self._ids = list(ids) if ids is not None else self._discover_ids()
         self._rgb_only = rgb_only
         self._prompt_bank = prompt_bank or PromptBank.default()
+        self._seed = seed
+
+        ids_list = list(ids) if ids is not None else self._discover_ids()
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            ids_list = list(rng.permutation(ids_list))
+
+        self._ids = ids_list
 
     def _discover_ids(self) -> List[str]:
         return sorted([p.name for p in self.root.iterdir() if p.is_dir()])

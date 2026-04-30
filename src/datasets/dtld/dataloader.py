@@ -6,6 +6,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 
+import numpy as np
+
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 
@@ -27,6 +29,8 @@ class DTLDDataset:
         rgb_only: bool = True,
         skip_bad_scenes: bool = True,
         prompt_bank: Optional[PromptBank] = None,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
@@ -36,8 +40,17 @@ class DTLDDataset:
         self._rgb_only = rgb_only
         self._skip_bad_scenes = bool(skip_bad_scenes)
         self._prompt_bank = prompt_bank or PromptBank.default()
+        self._seed = seed
         self._scene_cache: Dict[str, Dict[str, object]] = {}
         self._entries = self._build_entries()
+
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            self._entries = [
+                self._entries[i]
+                for i in rng.permutation(len(self._entries))
+            ]
+ 
 
     def _discover_scene_ids(self) -> List[str]:
         return sorted([p.name for p in self.root.iterdir() if p.is_dir()])
