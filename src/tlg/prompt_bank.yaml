@@ -50,3 +50,8 @@ tip_count:
 liquid_count:
   task_type: "Liquid Region Counting (discrete)"
   question: "How many distinct liquid regions are labeled? Answer with only an integer (0 or greater)."
+
+pouring_change_detection:
+  task_type: "Liquid Change Detection (pairwise)"
+  question: "Compare the first image and the second image. How did the liquid state change? Answer with only one of: NO_CHANGE, LIQUID_APPEARED, LIQUID_INCREASED."
+  choices: ["NO_CHANGE", "LIQUID_APPEARED", "LIQUID_INCREASED"]

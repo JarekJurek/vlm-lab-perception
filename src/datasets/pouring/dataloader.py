@@ -258,6 +258,7 @@ class PouringDataset:
             video_dir = self._split_base(split) / video_id
             json_path = video_dir / f"rgb_{frame_index}.json"
             sidecar_dir = video_dir / f"rgb_{frame_index}_json"
+            labelme: Dict[str, Any] = {}
 
             if json_path.exists():
                 labelme = _load_labelme_json(json_path)
@@ -283,6 +284,7 @@ class PouringDataset:
                 if label_names_txt.exists():
                     sample["label_names"] = _read_label_names(label_names_txt)
 
+            sample["liquid_stats"] = _compute_liquid_stats_from_labelme(labelme)
             sample["annotations"] = self._build_annotations_test(sample_id, sample)
             return sample
 
@@ -315,14 +317,11 @@ class PouringDataset:
             image_id=image_id,
         )
 
-        shapes = sample.get("labelme_shapes")
-        liquid_poly_count = 0
-        if isinstance(shapes, list):
-            for s in shapes:
-                if not isinstance(s, dict):
-                    continue
-                if str(s.get("label", "")).strip() == "liquid_mask":
-                    liquid_poly_count += 1
+        liquid_stats = sample.get("liquid_stats", {})
+        if isinstance(liquid_stats, dict):
+            liquid_poly_count = int(liquid_stats.get("polygon_count", 0))
+        else:
+            liquid_poly_count = 0
 
         annotations.append(
             add(
@@ -367,3 +366,52 @@ def _load_labelme_json(path: Path) -> Dict[str, Any]:
 
 def _read_label_names(path: Path) -> List[str]:
     return [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+
+def _extract_liquid_polygons(labelme_shapes: List[dict]) -> List[List[Tuple[float, float]]]:
+    """Extract all valid liquid_mask polygons from LabelMe shapes."""
+
+    polys: List[List[Tuple[float, float]]] = []
+    for s in labelme_shapes:
+        if not isinstance(s, dict):
+            continue
+        if str(s.get("label", "")).strip() != "liquid_mask":
+            continue
+        pts = s.get("points", [])
+        if not (isinstance(pts, list) and len(pts) >= 3):
+            continue
+        try:
+            poly = [(float(x), float(y)) for x, y in pts]
+            if len(poly) >= 3:
+                polys.append(poly)
+        except Exception:
+            continue
+    return polys
+
+
+def _polygon_area(points: List[Tuple[float, float]]) -> float:
+    """Shoelace formula for polygon area."""
+
+    if len(points) < 3:
+        return 0.0
+    x, y = zip(*points)
+    return 0.5 * abs(
+        sum(
+            x[i] * y[(i + 1) % len(points)] - x[(i + 1) % len(points)] * y[i]
+            for i in range(len(points))
+        )
+    )
+
+
+def _compute_liquid_stats_from_labelme(labelme: Dict[str, Any]) -> Dict[str, Any]:
+    """Return liquid polygon count, total polygon area, and presence."""
+
+    shapes = labelme.get("shapes", [])
+    polys = _extract_liquid_polygons(shapes if isinstance(shapes, list) else [])
+    areas = [_polygon_area(poly) for poly in polys]
+    total_area = float(np.sum(areas)) if areas else 0.0
+    return {
+        "polygon_count": len(polys),
+        "total_area": total_area,
+        "presence": len(polys) > 0,
+    }
