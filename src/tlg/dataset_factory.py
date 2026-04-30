@@ -17,7 +17,6 @@ DATA_ROOTS = {
     "labliquidvision": Path("data") / "LabLiquidVision",
     "glasses": Path("data") / "glasses_in_the_wild" / "glasses_in_the_wild_1000",
     "dtld": Path("data") / "DTLD_dataset",
-    # These defaults may vary depending on how you lay out `data/`.
     "pouring": Path("data") / "pouring",
     "ot2": Path("data") / "OT2-Computer-Vision",
 }
@@ -41,11 +40,11 @@ def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank
     if dataset_name == "labliquidvision":
         return LabLiquidVisionDataset(data_root, rgb_only=not include_depth, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "glasses":
-        return GlassesInTheWildDataset(data_root, prompt_bank=prompt_bank)
+        return GlassesInTheWildDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "dtld":
-        return DTLDDataset(data_root, rgb_only=True, prompt_bank=prompt_bank)
+        return DTLDDataset(data_root, rgb_only=True, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "pouring":
-        return PouringDataset(data_root, splits=("test",), prompt_bank=prompt_bank)
+        return PouringDataset(data_root, splits=("test",), prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "ot2":
-        return OT2Dataset(data_root, prompt_bank=prompt_bank)
+        return OT2Dataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     raise ValueError(f"Unsupported dataset: {dataset_name}")

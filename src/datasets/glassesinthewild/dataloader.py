@@ -5,6 +5,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union, cast
 
+import numpy as np
+
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 
@@ -16,6 +18,8 @@ class GlassesInTheWildDataset:
         root: Union[str, Path],
         ids: Optional[Iterable[int]] = None,
         prompt_bank: Optional[PromptBank] = None,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
@@ -78,6 +82,13 @@ class GlassesInTheWildDataset:
             sample["annotations"] = self._build_annotations(str(image_id), sample)
 
             self._samples.append(sample)
+            
+            if shuffle:
+                rng = np.random.default_rng(seed)
+                self._samples = [
+                    self._samples[i]
+                    for i in rng.permutation(len(self._samples))
+                ]
 
     def _build_annotations(self, image_id: str, sample: Dict[str, object]) -> List[TLGAnnotation]:
         dataset = "glasses"
