@@ -262,8 +262,12 @@ class OT2Dataset:
             image_id=image_id,
         )
 
-        tip_count = sum(1 for b in boxes if int(b.cls) == 0)
-        liquid_count = sum(1 for b in boxes if int(b.cls) == 1)
+        tip_boxes = [b for b in boxes if int(b.cls) == 0]
+        liquid_boxes = [b for b in boxes if int(b.cls) == 1]
+
+        tip_count = len(tip_boxes)
+        liquid_count = len(liquid_boxes)
+        fill_percentage = _compute_fill_percentage(tip_boxes, liquid_boxes)
 
         return [
             add(
@@ -278,6 +282,11 @@ class OT2Dataset:
             ),
             add(task="tip_count", answer=int(tip_count), metadata={"tip_count": tip_count}),
             add(task="liquid_count", answer=int(liquid_count), metadata={"liquid_count": liquid_count}),
+            add(
+                task="fill_percentage",
+                answer=float(fill_percentage),
+                metadata={"unit": "percent_of_tip_height"},
+            ),
         ]
 
 
@@ -306,6 +315,46 @@ def _parse_yolo_label_file(path: Path) -> List[YoloBox]:
         boxes.append(YoloBox(int(cls), float(xc), float(yc), float(w), float(h)))
 
     return boxes
+
+
+def _compute_fill_percentage(tip_boxes: List[YoloBox], liquid_boxes: List[YoloBox]) -> float:
+    """Estimate fill percentage as 100 * liquid_box_height / tip_box_height.
+
+    Matching rule:
+    - For each liquid box, find the smallest tip box that contains the liquid box center.
+    - Return the highest fill percentage across matched pairs.
+    - If nothing can be matched, return 0.0.
+    """
+
+    best_fill = 0.0
+
+    for liquid in liquid_boxes:
+        matched_tip: Optional[YoloBox] = None
+        matched_tip_area: Optional[float] = None
+
+        for tip in tip_boxes:
+            x1 = tip.xc - tip.w / 2.0
+            x2 = tip.xc + tip.w / 2.0
+            y1 = tip.yc - tip.h / 2.0
+            y2 = tip.yc + tip.h / 2.0
+
+            inside = x1 <= liquid.xc <= x2 and y1 <= liquid.yc <= y2
+            if not inside:
+                continue
+
+            area = tip.w * tip.h
+            if matched_tip is None or area < matched_tip_area:
+                matched_tip = tip
+                matched_tip_area = area
+
+        if matched_tip is None or matched_tip.h <= 0:
+            continue
+
+        fill = 100.0 * (liquid.h / matched_tip.h)
+        fill = max(0.0, min(100.0, fill))
+        best_fill = max(best_fill, fill)
+
+    return float(best_fill)
 
 
 def _load_yolo_class_names(root: Path) -> Dict[int, str]:
