@@ -116,10 +116,24 @@ def load_sdvlm_model(
         mm_vision_tower=vision_tower,
         **load_kwargs,
     )
+    
+    # SD-VLM model names may not trigger the LLaVA branch that sets
+    # image_processor inside load_pretrained_model(), so recover it here.
+    if image_processor is None:
+        vision_tower_model = model.get_vision_tower()
+        if vision_tower_model is None:
+            raise RuntimeError("SD-VLM loaded without a vision tower.")
+        if not getattr(vision_tower_model, "is_loaded", False):
+            vision_tower_model.load_model()
+        image_processor = vision_tower_model.image_processor
 
-    model.to(torch.float16)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = torch.float16 if device.type == "cuda" else torch.float32
+
+    model.to(device=device, dtype=dtype)
     model.use_depth = use_depth
     model.gt_depth = gt_depth
+    model.vit_depth = False
 
     print("SD-VLM model loaded successfully.")
     return model, tokenizer, image_processor
@@ -153,9 +167,8 @@ def depth_array_to_pil(depth_array: np.ndarray) -> Any:
         arr = np.zeros_like(arr)
 
     arr_uint8 = (arr * 255).clip(0, 255).astype(np.uint8)
-    # Convert grayscale to RGB by repeating channels.
-    arr_rgb = np.stack([arr_uint8] * 3, axis=-1)
-    return Image.fromarray(arr_rgb, mode="RGB")
+
+    return Image.fromarray(arr_uint8, mode="L")
 
 
 def run_task_sdvlm(
