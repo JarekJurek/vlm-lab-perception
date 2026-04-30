@@ -104,7 +104,7 @@ def main():
             continue
 
         dataset = build_dataset(
-            dataset_name, data_root, prompt_bank=prompt_bank, include_depth=include_depth
+            dataset_name, data_root, prompt_bank=prompt_bank, include_depth=include_depth, shuffle=args.shuffle, seed=int(args.seed)
         )
         print(f"Dataset size: {len(dataset)}")
 

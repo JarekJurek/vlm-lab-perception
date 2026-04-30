@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from datasets.dtld import DTLDDataset
 from datasets.glassesinthewild import GlassesInTheWildDataset
@@ -23,7 +23,7 @@ DATA_ROOTS = {
 }
 
 
-def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank, include_depth: bool = False) -> Any:
+def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank, include_depth: bool = False, shuffle: bool = False, seed: Optional[int] = None) -> Any:
     """Construct a dataset instance for a given dataset name.
 
     Args:
@@ -39,7 +39,7 @@ def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank
         Dataset instance.
     """
     if dataset_name == "labliquidvision":
-        return LabLiquidVisionDataset(data_root, rgb_only=not include_depth, prompt_bank=prompt_bank)
+        return LabLiquidVisionDataset(data_root, rgb_only=not include_depth, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "glasses":
         return GlassesInTheWildDataset(data_root, prompt_bank=prompt_bank)
     if dataset_name == "dtld":
