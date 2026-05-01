@@ -171,6 +171,29 @@ def depth_array_to_pil(depth_array: np.ndarray) -> Any:
     return Image.fromarray(arr_uint8, mode="L")
 
 
+def make_side_by_side_image(left_image: Any, right_image: Any) -> Any:
+    """Combine two RGB PIL images into one left/right comparison image."""
+
+    from PIL import Image
+
+    left = left_image.convert("RGB")
+    right = right_image.convert("RGB")
+    target_height = max(left.height, right.height)
+
+    def _resize_to_height(img: Any) -> Any:
+        if img.height == target_height:
+            return img
+        new_width = max(1, round(img.width * target_height / img.height))
+        return img.resize((new_width, target_height))
+
+    left = _resize_to_height(left)
+    right = _resize_to_height(right)
+    out = Image.new("RGB", (left.width + right.width, target_height), color=(255, 255, 255))
+    out.paste(left, (0, 0))
+    out.paste(right, (left.width, 0))
+    return out
+
+
 def run_task_sdvlm(
     model: Any,
     tokenizer: Any,
@@ -331,12 +354,15 @@ def test_sample_sdvlm(
     from PIL import Image, UnidentifiedImageError
 
     # --- Load RGB image ---
+    def _open_rgb_image(path: object, *, label: str):
+        try:
+            return Image.open(path).convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
+            raise OSError(f"Failed to open {label}: {path} ({exc})") from exc
+
     rgb_path = sample.get("rgb_image")
     if rgb_path is not None:
-        try:
-            rgb_image = Image.open(rgb_path).convert("RGB")
-        except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
-            raise OSError(f"Failed to open RGB image: {rgb_path} ({exc})") from exc
+        rgb_image = _open_rgb_image(rgb_path, label="RGB image")
     else:
         rgb_array = sample.get("rgb")
         if rgb_array is None:
@@ -346,6 +372,11 @@ def test_sample_sdvlm(
         if rgb_array.shape[0] in _LEADING_CHANNEL_COUNTS:
             rgb_array = rgb_array.transpose(1, 2, 0)
         rgb_image = Image.fromarray(rgb_array.astype("uint8"))
+
+    comparison_image = None
+    comparison_path = sample.get("comparison_rgb_image")
+    if comparison_path is not None:
+        comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
 
     # --- Load depth image (optional, only used when model.gt_depth is True) ---
     depth_image: Optional[Any] = None
@@ -364,12 +395,23 @@ def test_sample_sdvlm(
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  [SD-VLM] Running task: {task_name}...")
+        task_image = rgb_image
+        prompt = ann.question
+        if comparison_image is not None:
+            task_image = make_side_by_side_image(rgb_image, comparison_image)
+            prompt = (
+                "The input image is a side-by-side comparison. "
+                "The left panel is the first, earlier frame. "
+                "The right panel is the second, later frame.\n\n"
+                f"{prompt}"
+            )
+
         response = run_task_sdvlm(
             model,
             tokenizer,
             image_processor,
-            rgb_image,
-            ann.question,
+            task_image,
+            prompt,
             depth_image,
             dataset_name=dataset_name,
             sample_id=sample_id,

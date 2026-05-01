@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from tlg.attention_viz import write_attention_overlay
 from tlg.annotations import TLGAnnotation
@@ -54,6 +54,7 @@ def run_task(
     image,
     prompt: str,
     mask=None,
+    extra_images: Optional[Sequence[Any]] = None,
     *,
     dataset_name: str = "",
     sample_id: str = "",
@@ -70,6 +71,7 @@ def run_task(
         image: RGB image of the container.
         prompt: Task prompt text.
         mask: Optional vessel mask image.
+        extra_images: Optional additional RGB images to pass after ``image``.
         dataset_name: Dataset name for visualization output.
         sample_id: Sample identifier for visualization output.
         task_name: Task name for visualization output.
@@ -86,10 +88,18 @@ def run_task(
     content = [{"type": "image"}]
     images = [image]
 
+    if extra_images:
+        for extra_image in extra_images:
+            content.append({"type": "image"})
+            images.append(extra_image)
+
     if mask is not None:
         content.append({"type": "image"})
         images.append(mask)
-        prompt = f"The second image shows the container mask.\n\n{prompt}"
+        if extra_images:
+            prompt = f"The final image shows the container mask.\n\n{prompt}"
+        else:
+            prompt = f"The second image shows the container mask.\n\n{prompt}"
 
     content.append({"type": "text", "text": prompt})
 
@@ -176,12 +186,15 @@ def test_sample(
     """
     from PIL import Image, UnidentifiedImageError
 
+    def _open_rgb_image(path: object, *, label: str):
+        try:
+            return Image.open(path).convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
+            raise OSError(f"Failed to open {label}: {path} ({exc})") from exc
+
     rgb_path = sample.get("rgb_image")
     if rgb_path is not None:
-        try:
-            rgb_image = Image.open(rgb_path).convert("RGB")
-        except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
-            raise OSError(f"Failed to open RGB image: {rgb_path} ({exc})") from exc
+        rgb_image = _open_rgb_image(rgb_path, label="RGB image")
     else:
         rgb_array = sample.get("rgb")
         if rgb_array is None:
@@ -190,24 +203,40 @@ def test_sample(
             rgb_array = rgb_array.transpose(1, 2, 0)
         rgb_image = Image.fromarray(rgb_array.astype("uint8"))
 
+    comparison_image = None
+    comparison_path = sample.get("comparison_rgb_image")
+    if comparison_path is not None:
+        comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
+
     mask_image = None
     mask_path = sample.get("mask_image")
     if mask_path is not None:
         try:
-            mask_image = Image.open(mask_path).convert("RGB")
-        except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
+            mask_image = _open_rgb_image(mask_path, label="mask image")
+        except OSError:
             mask_image = None
 
     results: Dict[str, str] = {}
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  Running task: {task_name}...")
+        prompt = ann.question
+        extra_images = None
+        if comparison_image is not None:
+            prompt = (
+                "The first image is the earlier frame. "
+                "The second image is the later frame.\n\n"
+                f"{prompt}"
+            )
+            extra_images = [comparison_image]
+
         response = run_task(
             model,
             processor,
             rgb_image,
-            ann.question,
+            prompt,
             mask=mask_image,
+            extra_images=extra_images,
             dataset_name=dataset_name,
             sample_id=sample_id,
             task_name=task_name,

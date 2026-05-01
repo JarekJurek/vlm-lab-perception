@@ -317,6 +317,9 @@ class PouringDataset:
             image_id=image_id,
         )
 
+        if not self._prompt_bank.supports(dataset, "liquid_presence"):
+            return annotations
+
         liquid_stats = sample.get("liquid_stats", {})
         if isinstance(liquid_stats, dict):
             liquid_poly_count = int(liquid_stats.get("polygon_count", 0))

@@ -7,6 +7,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import numpy as np
+
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 
 from .dataloader import PouringDataset
@@ -30,6 +32,8 @@ class PouringChangeDetectionDataset:
         root: Union[str, Path],
         prompt_bank: Optional[PromptBank] = None,
         max_pair_distance: Optional[int] = None,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
     ) -> None:
         self.root = Path(root)
         self.prompt_bank = prompt_bank or PromptBank.default()
@@ -37,6 +41,9 @@ class PouringChangeDetectionDataset:
         self.split = "test"
         self._dataset = PouringDataset(root, splits=(self.split,), prompt_bank=self.prompt_bank)
         self.samples = self._build_samples()
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            self.samples = [self.samples[i] for i in rng.permutation(len(self.samples))]
 
     def _build_samples(self) -> List[Dict[str, Any]]:
         samples: List[Dict[str, Any]] = []
@@ -80,6 +87,8 @@ class PouringChangeDetectionDataset:
                             "frame_b_index": b["frame_index"],
                             "frame_a_path": str(a["img_path"]),
                             "frame_b_path": str(b["img_path"]),
+                            "rgb_image": a["img_path"],
+                            "comparison_rgb_image": b["img_path"],
                             "area_a": a["area"],
                             "area_b": b["area"],
                             "label": label,
