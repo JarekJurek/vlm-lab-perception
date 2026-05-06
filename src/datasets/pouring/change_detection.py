@@ -14,14 +14,23 @@ from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 from .dataloader import PouringDataset
 
 
-def _label_change(area_a: float, area_b: float, eps: float) -> Optional[str]:
+def _label_change(area_a: float, area_b: float, eps: float) -> str:
+    """Label a frame pair based on liquid area change.
+    
+    Returns one of: NO_CHANGE, LIQUID_APPEARED, LIQUID_INCREASED.
+    All valid pairs are labeled; no None filtering.
+    """
     if area_a == 0 and area_b == 0:
+        # Both empty
         return "NO_CHANGE"
     if area_a == 0 and area_b > 0:
+        # Liquid appeared
         return "LIQUID_APPEARED"
     if area_a > 0 and area_b > area_a + eps:
+        # Liquid increased
         return "LIQUID_INCREASED"
-    return None
+    # All other cases (decrease, small change, area_b == 0 when area_a > 0)
+    return "NO_CHANGE"
 
 
 class PouringChangeDetectionDataset:
@@ -34,16 +43,36 @@ class PouringChangeDetectionDataset:
         max_pair_distance: Optional[int] = None,
         shuffle: bool = False,
         seed: Optional[int] = None,
+        *,
+        random_pairs: bool = False,
+        num_pairs: Optional[int] = None,
     ) -> None:
         self.root = Path(root)
         self.prompt_bank = prompt_bank or PromptBank.default()
         self.max_pair_distance = max_pair_distance
         self.split = "test"
         self._dataset = PouringDataset(root, splits=(self.split,), prompt_bank=self.prompt_bank)
-        self.samples = self._build_samples()
-        if shuffle:
-            rng = np.random.default_rng(seed)
-            self.samples = [self.samples[i] for i in rng.permutation(len(self.samples))]
+        self._random_pairs = bool(random_pairs)
+        self._num_pairs = None if num_pairs is None else int(num_pairs)
+        self._seed = None if seed is None else int(seed)
+
+        samples = self._build_samples()
+        # Optionally subsample / randomize the pair list in a seedable way.
+        if self._random_pairs:
+            rng = np.random.default_rng(self._seed)
+            if self._num_pairs is None:
+                # Shuffle all pairs
+                samples = [samples[i] for i in rng.permutation(len(samples))]
+            else:
+                k = min(self._num_pairs, len(samples))
+                perm = rng.permutation(len(samples))[:k]
+                samples = [samples[i] for i in perm]
+        else:
+            if shuffle:
+                rng = np.random.default_rng(seed)
+                samples = [samples[i] for i in rng.permutation(len(samples))]
+
+        self.samples = samples
 
     def _build_samples(self) -> List[Dict[str, Any]]:
         samples: List[Dict[str, Any]] = []
@@ -74,8 +103,6 @@ class PouringChangeDetectionDataset:
                         continue
                     eps = max(20.0, 0.01 * a["area"])
                     label = _label_change(a["area"], b["area"], eps)
-                    if label is None:
-                        continue
                     sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}__rgb_{b['frame_index']}"
                     ann = self._build_annotation(sample_id, a, b, label)
                     samples.append(

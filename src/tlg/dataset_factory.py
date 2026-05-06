@@ -71,9 +71,15 @@ def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank
     if dataset_name == "pouring":
         pouring_datasets: List[Any] = []
         if prompt_bank.supports("pouring", "liquid_presence"):
-            pouring_datasets.append(PouringDataset(data_root, splits=("test",), prompt_bank=prompt_bank))
+            pouring_datasets.append(
+                PouringDataset(data_root, splits=("test",), prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
+            )
         if prompt_bank.supports("pouring", "pouring_change_detection"):
-            pouring_datasets.append(PouringChangeDetectionDataset(data_root, prompt_bank=prompt_bank))
+            pouring_datasets.append(
+                PouringChangeDetectionDataset(
+                    data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed, random_pairs=True
+                )
+            )
         return _CombinedDataset(pouring_datasets, shuffle=shuffle, seed=seed)
     if dataset_name == "ot2":
         return OT2Dataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
