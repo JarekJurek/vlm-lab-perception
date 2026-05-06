@@ -9,7 +9,7 @@ from datasets.dtld import DTLDDataset
 from datasets.glassesinthewild import GlassesInTheWildDataset
 from datasets.labliquidvision import LabLiquidVisionDataset
 from datasets.ot2 import OT2Dataset
-from datasets.pouring import PouringDataset
+from datasets.pouring import PouringChangeDetectionDataset
 from tlg.prompts import PromptBank
 
 
@@ -20,8 +20,6 @@ DATA_ROOTS = {
     "pouring": Path("data") / "pouring",
     "ot2": Path("data") / "OT2-Computer-Vision",
 }
-
-
 def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank, include_depth: bool = False, shuffle: bool = False, seed: Optional[int] = None) -> Any:
     """Construct a dataset instance for a given dataset name.
 
@@ -44,7 +42,7 @@ def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank
     if dataset_name == "dtld":
         return DTLDDataset(data_root, rgb_only=True, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "pouring":
-        return PouringDataset(data_root, splits=("test",), prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
+        return PouringChangeDetectionDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "ot2":
         return OT2Dataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     raise ValueError(f"Unsupported dataset: {dataset_name}")

@@ -37,7 +37,7 @@ export OPENBLAS_NUM_THREADS=4
 export NUMEXPR_NUM_THREADS=4
 
 python3 test_qwen_vl_tasks.py \
-    --datasets labliquidvision glasses dtld pouring ot2 \
+    --datasets pouring \
     --max-samples 4 \
     --model qwen \
     --viz-attn \
