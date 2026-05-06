@@ -224,8 +224,8 @@ def test_sample(
         extra_images = None
         if comparison_image is not None:
             prompt = (
-                "The first image is the earlier frame. "
-                "The second image is the later frame.\n\n"
+                "The first image is the first frame. "
+                "The second image is the second frame.\n\n"
                 f"{prompt}"
             )
             extra_images = [comparison_image]

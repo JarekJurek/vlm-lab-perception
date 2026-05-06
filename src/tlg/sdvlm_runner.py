@@ -401,8 +401,8 @@ def test_sample_sdvlm(
             task_image = make_side_by_side_image(rgb_image, comparison_image)
             prompt = (
                 "The input image is a side-by-side comparison. "
-                "The left panel is the first, earlier frame. "
-                "The right panel is the second, later frame.\n\n"
+                "The left panel is the first frame. "
+                "The right panel is the second frame.\n\n"
                 f"{prompt}"
             )
 
