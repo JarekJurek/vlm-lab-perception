@@ -13,9 +13,8 @@ Supported models (--model flag):
 """
 
 import json
-import random
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import sys
 
@@ -113,11 +112,13 @@ def main():
             continue
 
         max_samples = max(1, int(args.max_samples))
-        indices = list(range(len(dataset)))
-        if args.shuffle:
-            rng = random.Random(int(args.seed))
-            rng.shuffle(indices)
-        indices = indices[: min(len(indices), max_samples)]
+        indices = _select_indices(
+            dataset,
+            dataset_name=dataset_name,
+            max_samples=max_samples,
+            shuffle=bool(args.shuffle),
+            seed=int(args.seed),
+        )
         for j, idx0 in enumerate(indices):
             idx = j + 1
             try:
@@ -317,6 +318,28 @@ def _record_results(
             if "within_tol" in rec:
                 row["within_tol"] = rec["within_tol"]
             pred_fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _select_indices(
+    dataset,
+    *,
+    dataset_name: str,
+    max_samples: int,
+    shuffle: bool,
+    seed: int,
+) -> List[int]:
+    """Select sample indices from the dataset.
+
+    Dataset-specific composition should already be handled by the dataloader.
+    """
+
+    indices = list(range(len(dataset)))
+    if shuffle:
+        import random
+
+        rng = random.Random(seed)
+        rng.shuffle(indices)
+    return indices[: min(len(indices), max_samples)]
 
 
 if __name__ == "__main__":

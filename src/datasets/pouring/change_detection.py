@@ -104,27 +104,49 @@ class PouringChangeDetectionDataset:
                     eps = max(20.0, 0.01 * a["area"])
                     label = _label_change(a["area"], b["area"], eps)
                     sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}__rgb_{b['frame_index']}"
-                    ann = self._build_annotation(sample_id, a, b, label)
-                    samples.append(
-                        {
-                            "id": sample_id,
-                            "split": self.split,
-                            "video_id": video_id,
-                            "frame_a_index": a["frame_index"],
-                            "frame_b_index": b["frame_index"],
-                            "frame_a_path": str(a["img_path"]),
-                            "frame_b_path": str(b["img_path"]),
-                            "rgb_image": a["img_path"],
-                            "comparison_rgb_image": b["img_path"],
-                            "area_a": a["area"],
-                            "area_b": b["area"],
-                            "label": label,
-                            "annotations": [ann],
-                        }
-                    )
+
+                    # Only build annotations that the PromptBank says are enabled
+                    annotations: List[TLGAnnotation] = []
+                    if self.prompt_bank.supports("pouring", "liquid_presence"):
+                        annotations.append(self._build_liquid_presence_annotation(sample_id, a))
+                    if self.prompt_bank.supports("pouring", "pouring_change_detection"):
+                        annotations.append(self._build_change_annotation(sample_id, a, b, label))
+
+                    # Only include the sample if at least one enabled annotation exists.
+                    if annotations:
+                        samples.append(
+                            {
+                                "id": sample_id,
+                                "split": self.split,
+                                "video_id": video_id,
+                                "frame_a_index": a["frame_index"],
+                                "frame_b_index": b["frame_index"],
+                                "frame_a_path": str(a["img_path"]),
+                                "frame_b_path": str(b["img_path"]),
+                                "rgb_image": a["img_path"],
+                                "comparison_rgb_image": b["img_path"],
+                                "area_a": a["area"],
+                                "area_b": b["area"],
+                                "label": label,
+                                "annotations": annotations,
+                            }
+                        )
         return samples
 
-    def _build_annotation(self, sample_id: str, a: dict, b: dict, label: str) -> TLGAnnotation:
+    def _build_liquid_presence_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:
+        return make_tlg_annotation(
+            self.prompt_bank,
+            dataset="pouring",
+            task="liquid_presence",
+            image_id=sample_id,
+            answer="YES" if a["area"] > 0 else "NO",
+            metadata={
+                "frame_index": a["frame_index"],
+                "area": a["area"],
+            },
+        )
+
+    def _build_change_annotation(self, sample_id: str, a: dict, b: dict, label: str) -> TLGAnnotation:
         return make_tlg_annotation(
             self.prompt_bank,
             dataset="pouring",
