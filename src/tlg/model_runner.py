@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from tlg.attention_viz import write_attention_overlay
 from tlg.annotations import TLGAnnotation
+from tlg.target_overlay import TARGET_BOX_PROMPT, make_target_box_overlay, should_mark_target_box
 
 
 # MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Instruct"
@@ -53,7 +54,6 @@ def run_task(
     processor,
     image,
     prompt: str,
-    mask=None,
     extra_images: Optional[Sequence[Any]] = None,
     *,
     dataset_name: str = "",
@@ -70,7 +70,6 @@ def run_task(
         processor: Qwen3-VL processor.
         image: RGB image of the container.
         prompt: Task prompt text.
-        mask: Optional vessel mask image.
         extra_images: Optional additional RGB images to pass after ``image``.
         dataset_name: Dataset name for visualization output.
         sample_id: Sample identifier for visualization output.
@@ -92,14 +91,6 @@ def run_task(
         for extra_image in extra_images:
             content.append({"type": "image"})
             images.append(extra_image)
-
-    if mask is not None:
-        content.append({"type": "image"})
-        images.append(mask)
-        if extra_images:
-            prompt = f"The final image shows the container mask.\n\n{prompt}"
-        else:
-            prompt = f"The second image shows the container mask.\n\n{prompt}"
 
     content.append({"type": "text", "text": prompt})
 
@@ -208,20 +199,29 @@ def test_sample(
     if comparison_path is not None:
         comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
 
-    mask_image = None
+    target_box_image = None
     mask_path = sample.get("mask_image")
     if mask_path is not None:
         try:
             mask_image = _open_rgb_image(mask_path, label="mask image")
+            bbox = sample.get("bbox_visib") or sample.get("bbox_obj")
+            target_box_image = make_target_box_overlay(rgb_image, mask_image, bbox=bbox)
         except OSError:
-            mask_image = None
+            target_box_image = None
 
     results: Dict[str, str] = {}
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  Running task: {task_name}...")
+        use_target_box = (
+            target_box_image is not None
+            and should_mark_target_box(dataset_name, task_name)
+        )
+        task_image = target_box_image if use_target_box else rgb_image
         prompt = ann.question
         extra_images = None
+        if use_target_box:
+            prompt = TARGET_BOX_PROMPT + prompt
         if comparison_image is not None:
             prompt = (
                 "The first image is the first frame. "
@@ -233,9 +233,8 @@ def test_sample(
         response = run_task(
             model,
             processor,
-            rgb_image,
+            task_image,
             prompt,
-            mask=mask_image,
             extra_images=extra_images,
             dataset_name=dataset_name,
             sample_id=sample_id,

@@ -46,6 +46,7 @@ import numpy as np
 
 from tlg.annotations import TLGAnnotation
 from tlg.attention_viz import write_attention_overlay_sdvlm
+from tlg.target_overlay import TARGET_BOX_PROMPT, make_target_box_overlay, should_mark_target_box
 
 
 SDVLM_MODEL_NAME = "cpystan/SD-VLM-7B"
@@ -378,6 +379,16 @@ def test_sample_sdvlm(
     if comparison_path is not None:
         comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
 
+    target_box_image = None
+    mask_path = sample.get("mask_image")
+    if mask_path is not None:
+        try:
+            mask_image = _open_rgb_image(mask_path, label="mask image")
+            bbox = sample.get("bbox_visib") or sample.get("bbox_obj")
+            target_box_image = make_target_box_overlay(rgb_image, mask_image, bbox=bbox)
+        except OSError:
+            target_box_image = None
+
     # --- Load depth image (optional, only used when model.gt_depth is True) ---
     depth_image: Optional[Any] = None
     if model.gt_depth:
@@ -395,10 +406,16 @@ def test_sample_sdvlm(
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  [SD-VLM] Running task: {task_name}...")
-        task_image = rgb_image
+        use_target_box = (
+            target_box_image is not None
+            and should_mark_target_box(dataset_name, task_name)
+        )
+        task_image = target_box_image if use_target_box else rgb_image
         prompt = ann.question
+        if use_target_box:
+            prompt = TARGET_BOX_PROMPT + prompt
         if comparison_image is not None:
-            task_image = make_side_by_side_image(rgb_image, comparison_image)
+            task_image = make_side_by_side_image(task_image, comparison_image)
             prompt = (
                 "The input image is a side-by-side comparison. "
                 "The left panel is the first frame. "

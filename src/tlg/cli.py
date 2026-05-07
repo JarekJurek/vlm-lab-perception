@@ -49,14 +49,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--use-mask",
-        action="store_true",
-        help=(
-            "If a dataset sample provides a mask image, pass it as a second image. "
-            "Default: off (benchmark uses RGB only)."
-        ),
-    )
-    parser.add_argument(
         "--shuffle",
         action="store_true",
         help="Shuffle samples before selecting the first --max-samples.",
