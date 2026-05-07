@@ -265,29 +265,43 @@ class OT2Dataset:
         tip_boxes = [b for b in boxes if int(b.cls) == 0]
         liquid_boxes = [b for b in boxes if int(b.cls) == 1]
 
-        tip_count = len(tip_boxes)
-        liquid_count = len(liquid_boxes)
+        container_count = len(tip_boxes)
+        liquid_box_count = len(liquid_boxes)
         fill_percentage = _compute_fill_percentage(tip_boxes, liquid_boxes)
 
-        return [
+        annotations = [
             add(
                 task="tip_presence",
-                answer="YES" if tip_count > 0 else "NO",
-                metadata={"tip_count": tip_count},
+                answer="YES" if container_count > 0 else "NO",
+                metadata={"container_count": container_count},
             ),
             add(
                 task="liquid_presence",
-                answer="YES" if liquid_count > 0 else "NO",
-                metadata={"liquid_count": liquid_count},
+                answer="YES" if liquid_box_count > 0 else "NO",
+                metadata={"liquid_box_count": liquid_box_count},
             ),
-            add(task="tip_count", answer=int(tip_count), metadata={"tip_count": tip_count}),
-            add(task="liquid_count", answer=int(liquid_count), metadata={"liquid_count": liquid_count}),
+            add(
+                task="container_count",
+                answer=int(container_count),
+                metadata={"container_count": container_count, "source": "tip_boxes"},
+            ),
             add(
                 task="fill_percentage",
                 answer=float(fill_percentage),
                 metadata={"unit": "percent_of_tip_height"},
             ),
         ]
+
+        if container_count > 0 and self._prompt_bank.supports(dataset, "container_type"):
+            annotations.append(
+                add(
+                    task="container_type",
+                    answer="Tip",
+                    metadata={"container_count": container_count},
+                )
+            )
+
+        return annotations
 
 
 def _derive_sequence_fields(stem: str) -> Tuple[Optional[str], Optional[int]]:

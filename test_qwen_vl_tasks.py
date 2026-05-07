@@ -149,12 +149,6 @@ def main():
                 print("\nDry run OK: annotations are well-formed.")
                 continue
 
-            # Optionally pass a mask image as a second input to Qwen.
-            if not args.use_mask:
-                sample_no_mask = dict(sample)
-                sample_no_mask.pop("mask_image", None)
-                sample = sample_no_mask
-
             # --- Qwen inference ---
             if run_qwen:
                 try:
@@ -243,7 +237,6 @@ def main():
         payload: Dict[str, Any] = {
             "datasets": list(dataset_names),
             "max_samples": int(args.max_samples),
-            "use_mask": bool(args.use_mask),
         }
         if run_qwen:
             payload["qwen"] = {

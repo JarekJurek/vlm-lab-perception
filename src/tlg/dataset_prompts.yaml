@@ -18,18 +18,16 @@ glasses:
   - liquid_presence
 
 dtld:
-  include:
-    - container_type
-    - fill_height_mm
-    - liquid_presence
-  overrides:
-    container_type: dtld_container_type_4way
+  - container_count
+  - container_type
+  - fill_height_mm
+  - liquid_presence
 
 ot2:
   - tip_presence
   - liquid_presence
-  - tip_count
-  - liquid_count
+  - container_count
+  - container_type
   - fill_percentage
 
 pouring:

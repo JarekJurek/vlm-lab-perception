@@ -23,12 +23,12 @@ fill_level_ordinal:
 
 container_type:
   task_type: "Container Type Recognition (classification)"
-  question: "What type of container is this? Answer with only one short label."
+  question: "Identify the container type. Choose exactly one: Tube_50mL, Tube_15mL, Pyrex_100mL, StorageBottle_250mL, StorageBottle_500mL, Duran_500mL, Duran_250mL, Cell_Flask_160mL, Cell_Flask_400mL, Duran_100mL, Gibco_125mL, Gibco_500mL, T25 Flask, T75 Flask, T175 Flask, G-rex, or Tip."
+  choices: ["Tube_50mL", "Tube_15mL", "Pyrex_100mL", "StorageBottle_250mL", "StorageBottle_500mL", "Duran_500mL", "Duran_250mL", "Cell_Flask_160mL", "Cell_Flask_400mL", "Duran_100mL", "Gibco_125mL", "Gibco_500mL", "T25 Flask", "T75 Flask", "T175 Flask", "G-rex", "Tip"]
 
-dtld_container_type_4way:
-  task_type: "Container Type Recognition (classification)"
-  question: "Identify the container type. Choose exactly one: T25 Flask, T75 Flask, T175 Flask, or G-rex."
-  choices: ["T25 Flask", "T75 Flask", "T175 Flask", "G-rex"]
+container_count:
+  task_type: "Container Counting (discrete)"
+  question: "How many liquid containers are visible in the image? Answer with only an integer (0 or greater)."
 
 fill_height_mm:
   task_type: "Fill-Level Estimation (height_mm)"
@@ -42,14 +42,6 @@ tip_presence:
   task_type: "Tip Presence Detection (binary)"
   question: "Is there a pipette tip visible in the image? Answer with only 'YES' or 'NO'."
   choices: ["YES", "NO"]
-
-tip_count:
-  task_type: "Tip Counting (discrete)"
-  question: "How many pipette tips are visible? Answer with only an integer (0 or greater)."
-
-liquid_count:
-  task_type: "Liquid Region Counting (discrete)"
-  question: "How many distinct liquid regions are labeled? Answer with only an integer (0 or greater)."
 
 pouring_change_detection:
   task_type: "Liquid Change Detection (pairwise)"

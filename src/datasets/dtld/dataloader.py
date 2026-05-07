@@ -19,6 +19,51 @@ _DTLD_OBJECT_NAMES = {
 }
 
 
+def _as_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _has_visible_area(info: Dict[str, Any]) -> bool:
+    visib_fract = info.get("visib_fract")
+    if isinstance(visib_fract, (int, float)):
+        return float(visib_fract) > 0.0
+
+    bbox = info.get("bbox_visib")
+    if isinstance(bbox, list) and len(bbox) >= 4:
+        w = bbox[2]
+        h = bbox[3]
+        if isinstance(w, (int, float)) and isinstance(h, (int, float)):
+            return float(w) > 0.0 and float(h) > 0.0
+
+    return True
+
+
+def _count_dtld_visible_containers(
+    objects: List[Dict[str, Any]],
+    infos: Optional[List[Dict[str, Any]]],
+) -> int:
+    count = 0
+    for idx, obj in enumerate(objects):
+        obj_id = _as_int(obj.get("obj_id"))
+        if obj_id not in _DTLD_OBJECT_NAMES:
+            continue
+        if infos is not None and idx < len(infos) and not _has_visible_area(infos[idx]):
+            continue
+        count += 1
+    return count
+
+
 class DTLDDataset:
     """Minimal folder-based dataset loader for DTLD."""
 
@@ -144,15 +189,19 @@ class DTLDDataset:
 
         scene_data = self._load_scene_annotations(scene_id)
         liquid = cast(Dict[str, List[Dict[str, Any]]], scene_data["liquid"])
-        frame_liquid = liquid[str(frame_id)][obj_idx]
+        frame_liquid_objects = liquid[str(frame_id)]
+        frame_liquid = frame_liquid_objects[obj_idx]
 
-        sample["obj_id"] = int(frame_liquid.get("obj_id", -1))
+        obj_id = _as_int(frame_liquid.get("obj_id"))
+        sample["obj_id"] = obj_id if obj_id is not None else -1
         if "liquid_h" in frame_liquid:
             sample["liquid_h"] = frame_liquid["liquid_h"]
         if "liquid_label" in frame_liquid:
             sample["liquid_label"] = frame_liquid["liquid_label"]
 
         info = cast(Optional[Dict[str, List[Dict[str, Any]]]], scene_data.get("info"))
+        frame_infos = info.get(str(frame_id)) if info is not None and str(frame_id) in info else None
+        sample["container_count"] = _count_dtld_visible_containers(frame_liquid_objects, frame_infos)
         if info is not None and str(frame_id) in info and obj_idx < len(info[str(frame_id)]):
             frame_info = info[str(frame_id)][obj_idx]
             if "bbox_obj" in frame_info:
@@ -204,10 +253,25 @@ class DTLDDataset:
         obj_id_int = int(obj_id) if isinstance(obj_id, int) or (isinstance(obj_id, float) and obj_id.is_integer()) else None
         liquid_h = sample.get("liquid_h")
         liquid_h_f = float(liquid_h) if isinstance(liquid_h, (int, float)) else None
+        obj_idx = _as_int(sample.get("obj_idx"))
 
         if obj_id_int is not None and obj_id_int in _DTLD_OBJECT_NAMES:
             annotations.append(
                 add(task="container_type", answer=_DTLD_OBJECT_NAMES[obj_id_int], metadata={"obj_id": obj_id_int})
+            )
+
+        container_count = sample.get("container_count")
+        if (
+            obj_idx == 0
+            and self._prompt_bank.supports(dataset, "container_count")
+            and isinstance(container_count, int)
+        ):
+            annotations.append(
+                add(
+                    task="container_count",
+                    answer=container_count,
+                    metadata={"container_count": container_count, "frame_level": True},
+                )
             )
 
         if liquid_h_f is not None:
