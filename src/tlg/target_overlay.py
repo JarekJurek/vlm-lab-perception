@@ -66,9 +66,3 @@ def _xyxy_from_bbox(bbox: Sequence[float]) -> Optional[Tuple[float, float, float
     if w <= 0 or h <= 0:
         return None
     return x, y, x + w, y + h
-
-
-TARGET_BOX_PROMPT = (
-    "The target container is inside the red bounding box. "
-    "Answer only about that boxed container and ignore all other containers.\n\n"
-)

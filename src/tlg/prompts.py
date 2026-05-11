@@ -96,6 +96,15 @@ class PromptBank:
                 out.append(str(ds))
         return sorted(set(out))
 
+    def target_region_bbox_prompt(self) -> str:
+        """Return the shared prompt prefix for red-box target-region tasks."""
+
+        try:
+            spec = self.prompt_defs["target_region_bbox_prompt"]
+        except KeyError as e:
+            raise KeyError("Missing prompt definition: 'target_region_bbox_prompt'") from e
+        return str(spec["question"])
+
     @staticmethod
     def default_path() -> Path:
         # Prompt definitions live here (prompt_id -> spec).
@@ -231,5 +240,4 @@ def _load_dataset_assignments_yaml(path: Path) -> Dict[str, DatasetPromptAssignm
             out[dataset]["overrides"] = overrides_norm
 
     return out
-
 

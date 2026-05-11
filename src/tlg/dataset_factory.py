@@ -8,6 +8,7 @@ from typing import Any, Optional
 from datasets.dtld import DTLDDataset
 from datasets.glassesinthewild import GlassesInTheWildDataset
 from datasets.labliquidvision import LabLiquidVisionDataset
+from datasets.labpicsv1 import LabPicsV1Dataset
 from datasets.ot2 import OT2Dataset
 from datasets.pouring import PouringChangeDetectionDataset
 from tlg.prompts import PromptBank
@@ -17,6 +18,7 @@ DATA_ROOTS = {
     "labliquidvision": Path("data") / "LabLiquidVision",
     "glasses": Path("data") / "glasses_in_the_wild" / "glasses_in_the_wild_1000",
     "dtld": Path("data") / "DTLD_dataset",
+    "labpicsv1": Path("data") / "LabPicsV1",
     "pouring": Path("data") / "pouring",
     "ot2": Path("data") / "OT2-Computer-Vision",
 }
@@ -41,6 +43,8 @@ def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank
         return GlassesInTheWildDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "dtld":
         return DTLDDataset(data_root, rgb_only=True, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
+    if dataset_name == "labpicsv1":
+        return LabPicsV1Dataset(data_root, split="train", prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "pouring":
         return PouringChangeDetectionDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "ot2":

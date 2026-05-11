@@ -7,6 +7,9 @@
 #
 # Dataset-to-prompt assignment lives in `dataset_prompts.yaml`.
 
+target_region_bbox_prompt:
+  question: "The target region is inside the red bounding box. Answer only about that boxed region and ignore all other regions.\n\n"
+
 liquid_presence:
   task_type: "Liquid Presence Detection (binary)"
   question: "Does the container contain any liquid? Answer with only 'YES' or 'NO'."
@@ -41,6 +44,21 @@ liquid_color:
 tip_presence:
   task_type: "Tip Presence Detection (binary)"
   question: "Is there a pipette tip visible in the image? Answer with only 'YES' or 'NO'."
+  choices: ["YES", "NO"]
+
+highlighted_region_type:
+  task_type: "Lab Region Type Recognition (classification)"
+  question: "What is the region inside the red bounding box? Choose exactly one: VESSEL, LIQUID, FOAM, GEL, SOLID, POWDER, GRANULAR, VAPOR, or BACKGROUND."
+  choices: ["VESSEL", "LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR", "BACKGROUND"]
+
+material_types_present:
+  task_type: "Material Type Presence (multi-label)"
+  question: "Which material types are present in the image? Choose all that apply from: LIQUID, FOAM, GEL, SOLID, POWDER, GRANULAR, VAPOR, NONE. Answer with only a comma-separated list."
+  choices: ["LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR", "NONE"]
+
+multiphase_material_presence:
+  task_type: "Multi-Phase Material Presence Detection (binary)"
+  question: "Does the image contain a multi-phase material? Answer with only 'YES' or 'NO'."
   choices: ["YES", "NO"]
 
 pouring_change_detection:

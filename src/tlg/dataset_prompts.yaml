@@ -23,6 +23,11 @@ dtld:
   - fill_height_mm
   - liquid_presence
 
+labpicsv1:
+  - highlighted_region_type
+  - material_types_present
+  - multiphase_material_presence
+
 ot2:
   - tip_presence
   - liquid_presence

@@ -45,6 +45,7 @@ _YES_NO_TASKS = {"liquid_presence", "tip_presence"}
 _COUNT_TASKS = {"container_count"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
 _NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None)}
+_MATERIAL_TYPE_CHOICES = ("LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR")
 _COLOR_VARIANTS = {
     "reddish": "red", "bluish": "blue", "greenish": "green",
     "yellowish": "yellow", "orangish": "orange", "orangeish": "orange",
@@ -160,9 +161,33 @@ def _parse_count(response: str) -> Tuple[Optional[int], bool]:
     return n_int, True
 
 
+def parse_material_types(text: object) -> Optional[str]:
+    t = norm_label(text)
+    if not t:
+        return None
+
+    hits = []
+    for label in _MATERIAL_TYPE_CHOICES:
+        if re.search(rf"\b{re.escape(label.lower())}\b", t):
+            hits.append(label)
+
+    has_none = bool(re.search(r"\bnone\b", t)) or bool(re.search(r"\bno materials?\b", t))
+    if has_none and hits:
+        return None
+    if has_none:
+        return "NONE"
+    if not hits:
+        return None
+    return ", ".join(label for label in _MATERIAL_TYPE_CHOICES if label in set(hits))
+
+
 def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[object], bool]:
     """Parse model response into (canonical_prediction, is_valid)."""
     task = _task_name(ann)
+
+    if task == "material_types_present":
+        pred = parse_material_types(response)
+        return pred, pred is not None
 
     if ann.choices:
         pred = parse_choice(response, ann.choices)
@@ -212,6 +237,11 @@ def labels_equal(task: str, pred: object, gt: object) -> bool:
         if pred_c is not None and gt_c is not None:
             return _compact_alnum(pred_c) == _compact_alnum(gt_c)
         return norm_label(pred) == norm_label(gt)
+
+    if task == "material_types_present":
+        pred_c = parse_material_types(pred)
+        gt_c = parse_material_types(gt)
+        return pred_c is not None and gt_c is not None and pred_c == gt_c
 
     return norm_label(pred) == norm_label(gt)
 
