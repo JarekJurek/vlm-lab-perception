@@ -63,5 +63,5 @@ multiphase_material_presence:
 
 pouring_change_detection:
   task_type: "Liquid Change Detection (pairwise)"
-  question: "Compare the first image and the second image. How did the liquid state change? Answer with only one of: NO_CHANGE, LIQUID_INCREASED, LIQUID_DECREASED."
+  question: "Compare the first image to the second image. How did the amount of visible liquid change from the first image to the second image? Answer with only one of: NO_CHANGE, LIQUID_INCREASED, LIQUID_DECREASED."
   choices: ["NO_CHANGE", "LIQUID_INCREASED", "LIQUID_DECREASED"]
