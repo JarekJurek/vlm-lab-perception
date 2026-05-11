@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--datasets",
         nargs="+",
-        choices=["labliquidvision", "glasses", "dtld", "pouring", "ot2"],
+        choices=["labliquidvision", "glasses", "dtld", "labpicsv1", "pouring", "ot2"],
         default=["labliquidvision"],
         help="One or more datasets to evaluate.",
     )

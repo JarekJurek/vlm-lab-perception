@@ -46,7 +46,8 @@ import numpy as np
 
 from tlg.annotations import TLGAnnotation
 from tlg.attention_viz import write_attention_overlay_sdvlm
-from tlg.target_overlay import TARGET_BOX_PROMPT, make_target_box_overlay, should_mark_target_box
+from tlg.prompts import PromptBank
+from tlg.target_overlay import make_target_box_overlay, should_mark_target_box
 
 
 SDVLM_MODEL_NAME = "cpystan/SD-VLM-7B"
@@ -403,17 +404,22 @@ def test_sample_sdvlm(
 
     # --- Run per-task inference ---
     results: Dict[str, str] = {}
+    target_region_prompt = PromptBank.default().target_region_bbox_prompt()
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  [SD-VLM] Running task: {task_name}...")
+        region_box_image = _make_annotation_box_image(rgb_image, ann)
         use_target_box = (
             target_box_image is not None
             and should_mark_target_box(dataset_name, task_name)
         )
-        task_image = target_box_image if use_target_box else rgb_image
+        use_region_box = region_box_image is not None
+        task_image = region_box_image if use_region_box else target_box_image if use_target_box else rgb_image
         prompt = ann.question
-        if use_target_box:
-            prompt = TARGET_BOX_PROMPT + prompt
+        if use_region_box:
+            prompt = target_region_prompt + prompt
+        elif use_target_box:
+            prompt = target_region_prompt + prompt
         if comparison_image is not None:
             task_image = make_side_by_side_image(task_image, comparison_image)
             prompt = (
@@ -440,3 +446,16 @@ def test_sample_sdvlm(
         results[task_name] = response
 
     return results
+
+
+def _make_annotation_box_image(image: Any, ann: TLGAnnotation) -> Optional[Any]:
+    bbox = ann.metadata.get("bbox_xyxy")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return None
+    try:
+        x0, y0, x1, y1 = [float(v) for v in bbox[:4]]
+    except (TypeError, ValueError):
+        return None
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return make_target_box_overlay(image, image, bbox=[x0, y0, x1 - x0, y1 - y0])
