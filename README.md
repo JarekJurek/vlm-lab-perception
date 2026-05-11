@@ -48,7 +48,7 @@ Provides:
 - Training split: RGB sequences plus empty-cup reference frames and per-frame cup masks (`*_cup_mask.png`) in dedicated mask folders
 - Natural “sequence” structure via `video_#` directories for frame-by-frame temporal sampling
 
-This dataset supports liquid-region segmentation (polygon + pixel supervision), cup-context learning (cup masks), and per-video qualitative/temporal analysis across material domains (opaque vs transparent). It is useful for future temporal reasoning benchmarks, but not required for the initial static-image benchmark version.
+This dataset currently supports single-frame liquid presence detection and two-frame pouring change detection. When both tasks are enabled, TLG treats them as separate evaluation units: one sample per frame for liquid presence and a label-balanced subset of frame pairs for change detection.
 
 **OT2 (Tips + Liquid)**
 YOLO-style object detection dataset built from lab videos exported frame-by-frame.
@@ -107,7 +107,7 @@ For LabLiquidVision:
 }
 ```
 
-Each image is associated with multiple structured prompts derived directly from available ground truth. Tasks are only defined when reliable supervision exists in the source dataset.
+Each evaluation sample is associated with one or more structured prompts derived directly from available ground truth. Most datasets use one image per sample; pouring change detection uses a two-frame sample. Tasks are only defined when reliable supervision exists in the source dataset.
 
 ## Task Categories
 
@@ -123,6 +123,12 @@ Determine whether the container contains liquid.
 Derived from fill volume or mask presence.  
 Output: YES / NO.  
 Task type: **binary classification.**
+
+### Pouring Change Detection (PCD)
+
+Compare two frames from the same pouring sequence and determine whether the visible liquid amount stayed the same, increased, or decreased.  
+Output vocabulary: `NO_CHANGE`, `LIQUID_INCREASED`, `LIQUID_DECREASED`.  
+Task type: **multi-class classification.**
 
 ### Fill-Level Estimation (FLE)
 
@@ -164,11 +170,11 @@ Tasks are formulated as:
 
 Reported metrics include:
 
-- Overall accuracy  
-- Per-task accuracy  
+- Parse rate  
+- Overall and per-task accuracy  
 - Mean Absolute Error (for continuous fill estimation)  
-- Grounding accuracy (IoU-based where segmentation is available)  
-- Cross-domain generalization performance (lab vs real-world vs reflection-heavy scenes)
+- Within-tolerance accuracy for numeric tasks when a tolerance is configured
+- Per-dataset breakdowns when multiple datasets are evaluated
 
 ## Core Objective
 
@@ -187,9 +193,11 @@ TLG provides a structured and reproducible evaluation framework for multimodal r
 - `src/datasets/labliquidvision`: `LabLiquidVisionDataset`
 - `src/datasets/glassesinthewild`: `GlassesInTheWildDataset`
 - `src/datasets/dtld`: `DTLDDataset`
+- `src/datasets/pouring`: `PouringDataset`, `PouringChangeDetectionDataset`
+- `src/datasets/ot2`: `OT2Dataset`
 - `src/tlg/prompt_bank.yaml`: prompt definitions (prompt_id -> question/choices)
 - `src/tlg/dataset_prompts.yaml`: dataset -> included tasks, with optional overrides
-- `test_qwen_vl_tasks.py`: Qwen3-VL task runner across datasets
+- `test_qwen_vl_tasks.py`: Qwen3-VL / SD-VLM task runner across datasets
 - `notebooks/`: dataset preview notebooks
 - `hpc_scripts/`: helper scripts for HPC setup and runs
 - `data/`: dataset roots
@@ -212,15 +220,19 @@ From repo root:
 
 ```python
 import sys
-sys.path.append("src")
+sys.path.insert(0, "src")
 
 from datasets.labliquidvision import LabLiquidVisionDataset
 from datasets.glassesinthewild import GlassesInTheWildDataset
 from datasets.dtld import DTLDDataset
+from datasets.pouring import PouringChangeDetectionDataset
+from datasets.ot2 import OT2Dataset
 
-lab_ds = LabLiquidVisionDataset("data/LabLiquidVision/processed", rgb_only=True)
+lab_ds = LabLiquidVisionDataset("data/LabLiquidVision", rgb_only=True)
 glasses_ds = GlassesInTheWildDataset("data/glasses_in_the_wild/glasses_in_the_wild_1000")
 dtld_ds = DTLDDataset("data/DTLD_dataset", rgb_only=True)
+pouring_ds = PouringChangeDetectionDataset("data/pouring")
+ot2_ds = OT2Dataset("data/OT2-Computer-Vision")
 
 sample = lab_ds[0]
 print(sample["id"], sample.get("vol_liquid"), sample.get("rgb_image"))
@@ -232,10 +244,25 @@ Evaluate one or more datasets:
 
 ```bash
 python test_qwen_vl_tasks.py --datasets labliquidvision
-python test_qwen_vl_tasks.py --datasets labliquidvision glasses dtld
+python test_qwen_vl_tasks.py --datasets labliquidvision glasses dtld pouring ot2
+python test_qwen_vl_tasks.py --dry-run --datasets pouring --max-samples 3 --shuffle --seed 42
 ```
 
-Default model in the script: `Qwen/Qwen3-VL-30B-A3B-Instruct`.
+Default model in the script: `Qwen/Qwen3-VL-8B-Instruct`.
+
+By default, the runner processes all available samples. Use `--max-samples N` to cap evaluation. For ordinary datasets the cap is per dataset; for datasets with task-specific sample units (currently pouring), the cap is applied per task. For example, with both pouring tasks enabled, `--max-samples 200` selects up to 200 liquid-presence frame samples and up to 200 label-balanced pouring-change pair samples.
+
+Useful runner flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--datasets` | `labliquidvision` | One or more datasets: `labliquidvision`, `glasses`, `dtld`, `pouring`, `ot2` |
+| `--dry-run` | off | Validate dataset loading and standardized annotations without loading a model |
+| `--max-samples` | all | Cap samples per dataset or per task for task-aware datasets |
+| `--shuffle` | off | Shuffle before applying `--max-samples` |
+| `--seed` | `0` | Seed used with `--shuffle` |
+| `--predictions-out` | unset | Write per-task JSONL predictions |
+| `--metrics-out` | unset | Write aggregated metrics JSON |
 
 ### 3) Run SD-VLM tasks
 
