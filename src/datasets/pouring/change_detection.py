@@ -14,23 +14,20 @@ from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 from .dataloader import PouringDataset
 
 
-DEFAULT_RANDOM_PAIR_COUNT = 20
-
-
 def _label_change(area_a: float, area_b: float, eps: float) -> str:
     """Label a frame pair based on liquid area change.
     
-    Returns one of: NO_CHANGE, LIQUID_APPEARED, LIQUID_INCREASED, LIQUID_DECREASED.
+    Returns one of: NO_CHANGE, LIQUID_INCREASED, LIQUID_DECREASED.
     All valid pairs are labeled; no None filtering.
     """
     if area_a == 0 and area_b == 0:
         # Both empty
         return "NO_CHANGE"
-    if area_a == 0 and area_b > 0:
-        # Liquid appeared
-        return "LIQUID_APPEARED"
     if area_a > 0 and area_b > area_a + eps:
         # Liquid increased
+        return "LIQUID_INCREASED"
+    if area_a == 0 and area_b > area_a + eps:
+        # Treat liquid appearing from empty as an increase.
         return "LIQUID_INCREASED"
     if area_a > 0 and area_b < area_a - eps:
         # Liquid decreased
@@ -46,47 +43,25 @@ class PouringChangeDetectionDataset:
         self,
         root: Union[str, Path],
         prompt_bank: Optional[PromptBank] = None,
-        max_pair_distance: Optional[int] = None,
         shuffle: bool = False,
         seed: Optional[int] = None,
-        *,
-        sample_two_random_frames_per_video: bool = True,
-        random_pairs: bool = False,
-        num_pairs: Optional[int] = None,
     ) -> None:
         self.root = Path(root)
         self.prompt_bank = prompt_bank or PromptBank.default()
-        self.max_pair_distance = max_pair_distance
         self.split = "test"
-        self._dataset = PouringDataset(root, splits=(self.split,), prompt_bank=self.prompt_bank)
-        self._sample_two_random_frames_per_video = bool(sample_two_random_frames_per_video)
-        self._random_pairs = bool(random_pairs)
-        self._num_pairs = None if num_pairs is None else int(num_pairs)
         self._seed = None if seed is None else int(seed)
+        self._dataset = PouringDataset(root, splits=(self.split,), prompt_bank=self.prompt_bank)
 
         samples = self._build_samples()
-        # Optionally subsample / randomize the pair list in a seedable way.
-        if self._random_pairs:
-            rng = np.random.default_rng(self._seed)
-            if self._num_pairs is None:
-                # Shuffle all pairs
-                samples = [samples[i] for i in rng.permutation(len(samples))]
-            else:
-                k = min(self._num_pairs, len(samples))
-                perm = rng.permutation(len(samples))[:k]
-                samples = [samples[i] for i in perm]
-        else:
-            if shuffle:
-                rng = np.random.default_rng(seed)
-                samples = [samples[i] for i in rng.permutation(len(samples))]
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            samples = [samples[i] for i in rng.permutation(len(samples))]
 
         self.samples = samples
 
     def _build_samples(self) -> List[Dict[str, Any]]:
         samples: List[Dict[str, Any]] = []
-        candidate_pairs: List[tuple[str, Dict[str, Any], Dict[str, Any]]] = []
         frames_by_video: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        rng = np.random.default_rng(self._seed)
 
         for frame in self._dataset:
             video_id = str(cast(Any, frame["video_id"]))
@@ -106,47 +81,50 @@ class PouringChangeDetectionDataset:
                 }
             )
 
+        has_liquid_presence = self.prompt_bank.supports("pouring", "liquid_presence")
+        has_change_detection = self.prompt_bank.supports("pouring", "pouring_change_detection")
+
+        if has_liquid_presence:
+            for video_id, frame_infos in sorted(frames_by_video.items()):
+                for frame_info in sorted(frame_infos, key=lambda item: item["frame_index"]):
+                    self._append_single_frame_sample(samples, video_id, frame_info)
+
+        if not has_change_detection:
+            return samples
+
+        pair_samples: List[Dict[str, Any]] = []
         for video_id, frame_infos in sorted(frames_by_video.items()):
             frame_infos = sorted(frame_infos, key=lambda item: item["frame_index"])
-            if self._sample_two_random_frames_per_video:
-                candidate_pairs.extend((video_id, a, b) for a, b in self._candidate_pairs(frame_infos))
-            else:
-                # Generate ordered pairs (a, b) with a < b.
-                for i, a in enumerate(frame_infos):
-                    for j in range(i + 1, len(frame_infos)):
-                        b = frame_infos[j]
-                        if self.max_pair_distance is not None and (b["frame_index"] - a["frame_index"]) > self.max_pair_distance:
-                            continue
-                        self._append_sample(samples, video_id, a, b)
-
-        if self._sample_two_random_frames_per_video:
-            if not candidate_pairs:
-                return samples
-
-            pair_count = self._num_pairs if self._num_pairs is not None else DEFAULT_RANDOM_PAIR_COUNT
-            k = min(int(pair_count), len(candidate_pairs))
-            chosen = rng.permutation(len(candidate_pairs))[:k]
-            for idx in chosen:
-                video_id, a, b = candidate_pairs[int(idx)]
-                if rng.random() < 0.5:
-                    a, b = b, a
-                self._append_sample(samples, video_id, a, b)
+            # Generate both frame orders, including same-frame pairs. The
+            # same-frame pairs provide additional NO_CHANGE examples for the
+            # balanced subset.
+            for i, a in enumerate(frame_infos):
+                for j, b in enumerate(frame_infos):
+                    self._append_pair_sample(pair_samples, video_id, a, b)
+        samples.extend(self._balance_pair_samples(pair_samples))
         return samples
 
-    def _candidate_pairs(
-        self, frame_infos: List[Dict[str, Any]]
-    ) -> List[tuple[Dict[str, Any], Dict[str, Any]]]:
-        candidates: List[tuple[Dict[str, Any], Dict[str, Any]]] = []
-        for i, a in enumerate(frame_infos):
-            for j in range(i + 1, len(frame_infos)):
-                b = frame_infos[j]
-                pair_distance = b["frame_index"] - a["frame_index"]
-                if self.max_pair_distance is not None and pair_distance > self.max_pair_distance:
-                    continue
-                candidates.append((a, b))
-        return candidates
+    def _balance_pair_samples(self, pair_samples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        by_label: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for sample in pair_samples:
+            by_label[str(sample["label"])].append(sample)
 
-    def _append_sample(
+        if len(by_label) <= 1:
+            return pair_samples
+
+        target_count = min(len(group) for group in by_label.values())
+        rng = np.random.default_rng(self._seed)
+        balanced: List[Dict[str, Any]] = []
+        for label in sorted(by_label):
+            group = by_label[label]
+            if len(group) > target_count:
+                chosen = sorted(rng.choice(len(group), size=target_count, replace=False).tolist())
+                balanced.extend(group[i] for i in chosen)
+            else:
+                balanced.extend(group)
+        return balanced
+
+    def _append_pair_sample(
         self,
         samples: List[Dict[str, Any]],
         video_id: str,
@@ -156,48 +134,57 @@ class PouringChangeDetectionDataset:
         eps = max(20.0, 0.01 * a["area"])
         label = _label_change(a["area"], b["area"], eps)
 
-        # Determine which tasks are enabled
-        has_liquid_presence = self.prompt_bank.supports("pouring", "liquid_presence")
-        has_change_detection = self.prompt_bank.supports("pouring", "pouring_change_detection")
+        sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}__rgb_{b['frame_index']}"
 
-        # Construct sample_id based on which tasks are enabled.
-        # Single-frame tasks only reference frame_a; pairwise tasks reference both.
-        if has_change_detection:
-            sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}__rgb_{b['frame_index']}"
-        else:
-            sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}"
+        annotations = [self._build_change_annotation(sample_id, a, b, label)]
 
-        # Only build annotations that the PromptBank says are enabled
+        samples.append(
+            {
+                "id": sample_id,
+                "primary_task": "pouring_change_detection",
+                "split": self.split,
+                "video_id": video_id,
+                "frame_a_index": a["frame_index"],
+                "frame_a_path": str(a["img_path"]),
+                "rgb_image": a["img_path"],
+                "area_a": a["area"],
+                "frame_b_index": b["frame_index"],
+                "frame_b_path": str(b["img_path"]),
+                "comparison_rgb_image": b["img_path"],
+                "area_b": b["area"],
+                "label": label,
+                "annotations": annotations,
+            }
+        )
+
+    def _append_single_frame_sample(
+        self,
+        samples: List[Dict[str, Any]],
+        video_id: str,
+        a: Dict[str, Any],
+    ) -> None:
+        sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}"
         annotations: List[TLGAnnotation] = []
-        if has_liquid_presence:
-            annotations.append(self._build_liquid_presence_annotation(sample_id, a))
-        if has_change_detection:
-            annotations.append(self._build_change_annotation(sample_id, a, b, label))
 
-        # Only include the sample if at least one enabled annotation exists.
+        if self.prompt_bank.supports("pouring", "liquid_presence"):
+            annotations.append(self._build_liquid_presence_annotation(sample_id, a))
+
         if not annotations:
             return
 
-        sample: Dict[str, Any] = {
-            "id": sample_id,
-            "split": self.split,
-            "video_id": video_id,
-            "frame_a_index": a["frame_index"],
-            "frame_a_path": str(a["img_path"]),
-            "rgb_image": a["img_path"],
-            "area_a": a["area"],
-            "annotations": annotations,
-        }
-
-        # Only include frame_b info and comparison image if change_detection is enabled
-        if has_change_detection:
-            sample["frame_b_index"] = b["frame_index"]
-            sample["frame_b_path"] = str(b["img_path"])
-            sample["comparison_rgb_image"] = b["img_path"]
-            sample["area_b"] = b["area"]
-            sample["label"] = label
-
-        samples.append(sample)
+        samples.append(
+            {
+                "id": sample_id,
+                "primary_task": "liquid_presence",
+                "split": self.split,
+                "video_id": video_id,
+                "frame_a_index": a["frame_index"],
+                "frame_a_path": str(a["img_path"]),
+                "rgb_image": a["img_path"],
+                "area_a": a["area"],
+                "annotations": annotations,
+            }
+        )
 
     def _build_liquid_presence_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:
         return make_tlg_annotation(

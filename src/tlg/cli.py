@@ -36,8 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-samples",
         type=int,
-        default=1,
-        help="Max samples per dataset to process (default: 1).",
+        default=None,
+        help="Max samples per dataset/task to process (default: all available).",
     )
     parser.add_argument(
         "--data-root",
@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--shuffle",
         action="store_true",
-        help="Shuffle samples before selecting the first --max-samples.",
+        help="Shuffle samples before applying --max-samples.",
     )
     parser.add_argument(
         "--seed",

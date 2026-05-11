@@ -14,7 +14,7 @@ Supported models (--model flag):
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import sys
 
@@ -106,12 +106,15 @@ def main():
             dataset_name, data_root, prompt_bank=prompt_bank, include_depth=include_depth, shuffle=args.shuffle, seed=int(args.seed)
         )
         print(f"Dataset size: {len(dataset)}")
+        task_pool_counts = _primary_task_counts(dataset)
+        if task_pool_counts:
+            print(f"Task pool sizes: {_format_counts(task_pool_counts)}")
 
         if len(dataset) == 0:
             print("Error: Dataset is empty!")
             continue
 
-        max_samples = max(1, int(args.max_samples))
+        max_samples = len(dataset) if args.max_samples is None else max(1, int(args.max_samples))
         indices = _select_indices(
             dataset,
             dataset_name=dataset_name,
@@ -119,6 +122,13 @@ def main():
             shuffle=bool(args.shuffle),
             seed=int(args.seed),
         )
+        selected_task_counts = _primary_task_counts(dataset, indices) if task_pool_counts else {}
+        if selected_task_counts:
+            print(f"Selected samples: {len(indices)} total ({_format_counts(selected_task_counts)})")
+        else:
+            print(f"Selected samples: {len(indices)}")
+
+        seen_task_counts: Dict[str, int] = {}
         for j, idx0 in enumerate(indices):
             idx = j + 1
             try:
@@ -130,7 +140,16 @@ def main():
                 raise
 
             print("\n" + "-" * 60)
-            print(f"Sample {idx}/{len(dataset)}")
+            primary_task = sample.get("primary_task") if isinstance(sample, dict) else None
+            if primary_task and selected_task_counts:
+                task = str(primary_task)
+                seen_task_counts[task] = seen_task_counts.get(task, 0) + 1
+                print(
+                    f"Sample {idx}/{len(indices)} "
+                    f"({task} {seen_task_counts[task]}/{selected_task_counts[task]})"
+                )
+            else:
+                print(f"Sample {idx}/{len(indices)}")
             print(f"Sample ID: {sample.get('id', 'unknown')}")
 
             err = validate_annotations(sample)
@@ -236,7 +255,7 @@ def main():
         metrics_out_path.parent.mkdir(parents=True, exist_ok=True)
         payload: Dict[str, Any] = {
             "datasets": list(dataset_names),
-            "max_samples": int(args.max_samples),
+            "max_samples": "all" if args.max_samples is None else int(args.max_samples),
         }
         if run_qwen:
             payload["qwen"] = {
@@ -326,6 +345,33 @@ def _select_indices(
     Dataset-specific composition should already be handled by the dataloader.
     """
 
+    task_groups: Dict[str, List[int]] = {}
+    for i in range(len(dataset)):
+        try:
+            sample = dataset[i]
+        except (FileNotFoundError, OSError, SyntaxError):
+            continue
+        primary_task = sample.get("primary_task") if isinstance(sample, dict) else None
+        if not primary_task:
+            task_groups = {}
+            break
+        task_groups.setdefault(str(primary_task), []).append(i)
+
+    if task_groups:
+        import random
+
+        selected: List[int] = []
+        for task in sorted(task_groups):
+            group = list(task_groups[task])
+            if shuffle:
+                rng = random.Random(f"{seed}:{dataset_name}:{task}")
+                rng.shuffle(group)
+            selected.extend(group[: min(len(group), max_samples)])
+        if shuffle:
+            rng = random.Random(seed)
+            rng.shuffle(selected)
+        return selected
+
     indices = list(range(len(dataset)))
     if shuffle:
         import random
@@ -333,6 +379,26 @@ def _select_indices(
         rng = random.Random(seed)
         rng.shuffle(indices)
     return indices[: min(len(indices), max_samples)]
+
+
+def _primary_task_counts(dataset, indices: Optional[List[int]] = None) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    selected_indices = range(len(dataset)) if indices is None else indices
+    for i in selected_indices:
+        try:
+            sample = dataset[i]
+        except (FileNotFoundError, OSError, SyntaxError):
+            continue
+        primary_task = sample.get("primary_task") if isinstance(sample, dict) else None
+        if not primary_task:
+            return {}
+        task = str(primary_task)
+        counts[task] = counts.get(task, 0) + 1
+    return counts
+
+
+def _format_counts(counts: Dict[str, int]) -> str:
+    return ", ".join(f"{task}={counts[task]}" for task in sorted(counts))
 
 
 if __name__ == "__main__":
