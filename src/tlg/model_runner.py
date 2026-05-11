@@ -145,7 +145,6 @@ def run_task(
                 max_new_tokens=MAX_NEW_TOKENS,
                 do_sample=False,
                 return_dict_in_generate=True,
-                output_attentions=True,
             )
             output_ids = gen_out.sequences
         else:
