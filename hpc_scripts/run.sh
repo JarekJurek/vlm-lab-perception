@@ -1,6 +1,6 @@
 #!/bin/bash
 ### --------------- job name ------------------
-#BSUB -J attn_5
+#BSUB -J qwen_labpicsv1
 
 ### --------------- queue name ----------------
 #BSUB -q gpuv100
@@ -16,11 +16,11 @@
 #BSUB -R "rusage[mem=2GB]"
 
 ### --------------- wall-clock time ---------------
-#BSUB -W 0:45
+#BSUB -W 1:00
 
 ### --------------- output and error files ---------------
-#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz5_%J.out
-#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/attention_viz5_%J.err
+#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_labpicsv1_%J.out
+#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_labpicsv1_%J.err
     
 ### --------------- send email notifications -------------
 #BSUB -u s242911@dtu.dk
@@ -35,31 +35,18 @@ export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 export OPENBLAS_NUM_THREADS=4
 export NUMEXPR_NUM_THREADS=4
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# Qwen-VL memory is dominated by visual tokens. LabPicsV1 contains larger
+# source images than the other datasets, so cap processor pixels for 16 GB GPUs.
+export QWEN_MAX_PIXELS=$((512 * 28 * 28))
+export QWEN_MAX_NEW_TOKENS=128
 
 python3 test_qwen_vl_tasks.py \
-    --datasets pouring \
-    --max-samples 4 \
+    --datasets labpicsv1 \
+    --max-samples 500 \
+    --shuffle \
+    --seed 42 \
     --model qwen \
-    --viz-attn \
-    --viz-attn-mode first_answer_token \
-    --viz-out /zhome/a2/c/213547/work3/master_thesis/run5/attn \
-    --predictions-out /zhome/a2/c/213547/work3/master_thesis/run5/preds.jsonl \
-    --metrics-out /zhome/a2/c/213547/work3/master_thesis/run5/metrics.json
-
-# Example: run SD-VLM only on LabLiquidVision with ground-truth depth
-# python3 test_qwen_vl_tasks.py \
-#     --model sdvlm \
-#     --datasets labliquidvision \
-#     --sdvlm-gt-depth \
-#     --max-samples 4 \
-#     --predictions-out bakery/run_sdvlm/preds.jsonl \
-#     --metrics-out bakery/run_sdvlm/metrics.json
-
-# Example: run both Qwen and SD-VLM side-by-side on LabLiquidVision
-# python3 test_qwen_vl_tasks.py \
-#     --model both \
-#     --datasets labliquidvision \
-#     --sdvlm-gt-depth \
-#     --max-samples 4 \
-#     --predictions-out bakery/run_both/preds.jsonl \
-#     --metrics-out bakery/run_both/metrics.json
+    --predictions-out bakery/qwen_labpicsv1/preds.jsonl \
+    --metrics-out bakery/qwen_labpicsv1/metrics.json

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -13,7 +14,21 @@ from tlg.target_overlay import make_target_box_overlay, should_mark_target_box
 
 # MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
-MAX_NEW_TOKENS = 256
+MAX_NEW_TOKENS = int(os.environ.get("QWEN_MAX_NEW_TOKENS", "256"))
+DEFAULT_QWEN_MAX_PIXELS = 512 * 28 * 28
+
+
+def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive, got {value}")
+    return value
 
 
 def load_model(*, viz_attn: bool = False) -> Tuple[Any, Any]:
@@ -32,7 +47,17 @@ def load_model(*, viz_attn: bool = False) -> Tuple[Any, Any]:
     print(f"Loading model: {MODEL_NAME}")
     print(f"Device: {device}")
 
-    processor = AutoProcessor.from_pretrained(MODEL_NAME)
+    processor_kwargs: Dict[str, object] = {}
+    qwen_max_pixels = _env_int("QWEN_MAX_PIXELS", DEFAULT_QWEN_MAX_PIXELS)
+    qwen_min_pixels = _env_int("QWEN_MIN_PIXELS")
+    if qwen_max_pixels is not None:
+        processor_kwargs["max_pixels"] = qwen_max_pixels
+    if qwen_min_pixels is not None:
+        processor_kwargs["min_pixels"] = qwen_min_pixels
+
+    processor = AutoProcessor.from_pretrained(MODEL_NAME, **processor_kwargs)
+    if processor_kwargs:
+        print(f"Qwen processor image limits: {processor_kwargs}")
 
     model_kwargs: Dict[str, object] = {
         "dtype": torch.float16,
@@ -101,6 +126,15 @@ def run_task(
     # Prepare inputs using chat template + images.
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = processor(text=[text], images=images, return_tensors="pt").to(model.device)
+    input_ids = inputs.get("input_ids")
+    image_grid = inputs.get("image_grid_thw")
+    if input_ids is not None:
+        msg = f"    Qwen input tokens: {int(input_ids.shape[-1])}"
+        if image_grid is not None:
+            grid_values = image_grid.detach().cpu().tolist()
+            visual_tokens = sum(int(t) * int(h) * int(w) for t, h, w in grid_values)
+            msg += f", image_grid_thw={grid_values}, visual_tokens={visual_tokens}"
+        print(msg)
 
     # Generate.
     gen_out = None
