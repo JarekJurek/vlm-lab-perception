@@ -14,6 +14,8 @@ import gc
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+_SUPPORTED_VIZ_ATTN_MODES = {"all", "first_answer_token"}
+
 
 def write_attention_overlay(
     *,
@@ -29,6 +31,9 @@ def write_attention_overlay(
     task_name: str,
     viz_out_dir: Optional[Path],
     viz_attn_mode: str = "all",
+    viz_image_id: str = "",
+    viz_gt: object = None,
+    viz_prediction: object = None,
 ) -> None:
     """Write Qwen answer-to-image attention overlays for a single task.
 
@@ -44,7 +49,11 @@ def write_attention_overlay(
         sample_id: Sample identifier used in output path.
         task_name: Task name used in output filename.
         viz_out_dir: Output directory root for visualization files.
-        viz_attn_mode: Accepted for CLI compatibility; Qwen uses answer tokens.
+        viz_attn_mode: Token selection strategy – ``"all"`` or
+            ``"first_answer_token"``.
+        viz_image_id: Image/sample identifier shown in the figure title.
+        viz_gt: Ground-truth answer shown in the figure title.
+        viz_prediction: Model prediction shown in the figure title.
     """
     if viz_out_dir is None:
         return
@@ -60,6 +69,8 @@ def write_attention_overlay(
         print(f"{prefix}{ctx} {msg}")
 
     try:
+        _validate_viz_attn_mode(viz_attn_mode)
+
         prompt_ids = inputs.get("input_ids")
         if prompt_ids is None or getattr(prompt_ids, "ndim", None) != 2 or int(prompt_ids.shape[0]) != 1:
             _warn(f"Unexpected input_ids shape={getattr(prompt_ids, 'shape', None)}; skipping viz.")
@@ -89,11 +100,21 @@ def write_attention_overlay(
         if not answer_offsets:
             _warn("No non-special generated answer tokens found; skipping viz.")
             return
+        if viz_attn_mode == "first_answer_token":
+            answer_offsets = answer_offsets[:1]
         answer = processor.batch_decode(
             generated_ids,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0]
+
+        base_path = (
+            viz_out_dir
+            / _safe_name(dataset_name)
+            / _safe_name(sample_id)
+            / _safe_name(task_name)
+        )
+        _save_qwen_input_images(images=images, fallback_image=image, base_path=base_path)
 
         full_inputs = _qwen_extend_inputs(inputs, output_ids, input_len)
         with torch.no_grad():
@@ -104,16 +125,13 @@ def write_attention_overlay(
                 return_dict=True,
             )
 
-        base_path = (
-            viz_out_dir
-            / _safe_name(dataset_name)
-            / _safe_name(sample_id)
-            / _safe_name(task_name)
-        )
         _save_qwen_layer_grid(
             image=image,
             outputs=outputs,
             answer=answer,
+            gt=viz_gt,
+            prediction=viz_prediction if viz_prediction is not None else answer,
+            image_id=viz_image_id or sample_id,
             answer_offsets=answer_offsets,
             input_len=input_len,
             image_start=image_start,
@@ -262,6 +280,9 @@ def _save_qwen_layer_grid(
     image,
     outputs,
     answer: str,
+    gt: object,
+    prediction: object,
+    image_id: str,
     answer_offsets: Sequence[int],
     input_len: int,
     image_start: int,
@@ -299,10 +320,47 @@ def _save_qwen_layer_grid(
         ax.set_title(f"Layer {layer}")
         ax.axis("off")
 
-    fig.suptitle(f"Mean answer-to-image attention\nAnswer: {answer}")
+    title = (
+        "Mean answer-to-image attention\n"
+        f"Image: {_format_viz_value(image_id)} | "
+        f"GT: {_format_viz_value(gt)} | "
+        f"Pred: {_format_viz_value(prediction if prediction is not None else answer)}"
+    )
+    fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
+
+
+def _format_viz_value(value: object, *, max_len: int = 80) -> str:
+    """Format metadata values for compact figure titles."""
+    if value is None:
+        return "unknown"
+    text = str(value).strip()
+    if text.startswith("assistant\n"):
+        text = text.split("\n", 1)[1].strip()
+    text = " ".join(text.split())
+    if len(text) > max_len:
+        return text[: max_len - 3] + "..."
+    return text or "unknown"
+
+
+def _validate_viz_attn_mode(viz_attn_mode: str) -> None:
+    """Validate shared attention visualization token-selection modes."""
+    if viz_attn_mode not in _SUPPORTED_VIZ_ATTN_MODES:
+        allowed = ", ".join(sorted(_SUPPORTED_VIZ_ATTN_MODES))
+        raise ValueError(f"Unsupported viz_attn_mode={viz_attn_mode!r}; expected one of: {allowed}")
+
+
+def _save_qwen_input_images(*, images: Sequence, fallback_image, base_path: Path) -> None:
+    """Save the exact PIL image(s) passed to the Qwen processor for inspection."""
+    base_path.parent.mkdir(parents=True, exist_ok=True)
+    model_images = list(images) if images is not None else [fallback_image]
+    if not model_images:
+        model_images = [fallback_image]
+    for i, img in enumerate(model_images):
+        suffix = "_input" if i == 0 else f"_input_{i + 1}"
+        img.convert("RGB").save(Path(f"{base_path}{suffix}.png"))
 
 
 def _qwen_make_overlay(image, grid):
@@ -386,6 +444,8 @@ def write_attention_overlay_sdvlm(
         print(f"{prefix}{ctx} {msg}")
 
     try:
+        _validate_viz_attn_mode(viz_attn_mode)
+
         # --- Resolve the number of image patch tokens ---
         n_image_tokens: Optional[int] = None
         try:
