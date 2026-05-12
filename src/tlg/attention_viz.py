@@ -34,6 +34,7 @@ def write_attention_overlay(
     viz_image_id: str = "",
     viz_gt: object = None,
     viz_prediction: object = None,
+    viz_save_input_image: bool = False,
 ) -> None:
     """Write Qwen answer-to-image attention overlays for a single task.
 
@@ -54,6 +55,7 @@ def write_attention_overlay(
         viz_image_id: Image/sample identifier shown in the figure title.
         viz_gt: Ground-truth answer shown in the figure title.
         viz_prediction: Model prediction shown in the figure title.
+        viz_save_input_image: Whether to save the exact input image separately.
     """
     if viz_out_dir is None:
         return
@@ -114,7 +116,8 @@ def write_attention_overlay(
             / _safe_name(sample_id)
             / _safe_name(task_name)
         )
-        _save_qwen_input_images(images=images, fallback_image=image, base_path=base_path)
+        if viz_save_input_image:
+            _save_qwen_input_images(images=images, fallback_image=image, base_path=base_path)
 
         full_inputs = _qwen_extend_inputs(inputs, output_ids, input_len)
         with torch.no_grad():
