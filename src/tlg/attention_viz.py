@@ -10,8 +10,11 @@ Supports two backends:
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 from typing import List, Optional, Sequence
+
+_SUPPORTED_VIZ_ATTN_MODES = {"all", "first_answer_token"}
 
 
 def write_attention_overlay(
@@ -28,8 +31,12 @@ def write_attention_overlay(
     task_name: str,
     viz_out_dir: Optional[Path],
     viz_attn_mode: str = "all",
+    viz_image_id: str = "",
+    viz_gt: object = None,
+    viz_prediction: object = None,
+    viz_save_input_image: bool = False,
 ) -> None:
-    """Write an attention heatmap overlay for a single task.
+    """Write Qwen answer-to-image attention overlays for a single task.
 
     Args:
         model: Qwen3-VL model used for forward passes.
@@ -43,7 +50,12 @@ def write_attention_overlay(
         sample_id: Sample identifier used in output path.
         task_name: Task name used in output filename.
         viz_out_dir: Output directory root for visualization files.
-        viz_attn_mode: Which generated tokens to use for attention visualization.
+        viz_attn_mode: Token selection strategy – ``"all"`` or
+            ``"first_answer_token"``.
+        viz_image_id: Image/sample identifier shown in the figure title.
+        viz_gt: Ground-truth answer shown in the figure title.
+        viz_prediction: Model prediction shown in the figure title.
+        viz_save_input_image: Whether to save the exact input image separately.
     """
     if viz_out_dir is None:
         return
@@ -58,202 +70,45 @@ def write_attention_overlay(
             ctx = f" dataset={dataset_name!r} sample_id={sample_id!r} task={task_name!r}"
         print(f"{prefix}{ctx} {msg}")
 
-    if viz_attn_mode not in {"all", "first_answer_token", "mcq_answer"}:
-        raise ValueError(f"Unsupported viz_attn_mode: {viz_attn_mode}")
-
     try:
-        # NOTE: This is a qualitative raw self-attention diagnostic, not a faithful
-        # reproduction of LABSHIELD or attention rollout.
-
-        img_token_id = _get_image_token_id(processor)
-        if img_token_id is None:
-            _warn("Could not resolve image token id; skipping viz for this task.")
-            return
+        _validate_viz_attn_mode(viz_attn_mode)
 
         prompt_ids = inputs.get("input_ids")
         if prompt_ids is None or getattr(prompt_ids, "ndim", None) != 2 or int(prompt_ids.shape[0]) != 1:
             _warn(f"Unexpected input_ids shape={getattr(prompt_ids, 'shape', None)}; skipping viz.")
             return
-        prompt_len = int(prompt_ids.shape[1])
+        input_len = int(prompt_ids.shape[1])
 
-        # Find image-token positions in the prompt only.
-        img_positions_all = (prompt_ids[0] == int(img_token_id)).nonzero(as_tuple=False).flatten().tolist()
-        if not img_positions_all:
-            _warn("No image token positions found in prompt; skipping viz.")
-            return
-
-        if len(images) > 1:
+        if images is not None and len(images) > 1:
             _warn("Multiple images were provided; visualizing attention for the first image only.")
-
-        grid = inputs.get("image_grid_thw")
-        t_raw = h_raw = w_raw = None
-        t_i = h_i = w_i = 1
-        if grid is not None:
-            try:
-                grid0 = grid[0].tolist() if hasattr(grid, "__getitem__") else None
-                if isinstance(grid0, (list, tuple)) and len(grid0) >= 3:
-                    t_raw, h_raw, w_raw = int(grid0[0]), int(grid0[1]), int(grid0[2])
-            except Exception:
-                t_raw = h_raw = w_raw = None
-
-        n_img1 = None
-        if (
-            isinstance(t_raw, int)
-            and isinstance(h_raw, int)
-            and isinstance(w_raw, int)
-            and t_raw > 0
-            and h_raw > 0
-            and w_raw > 0
-        ):
-            n_img1 = int(t_raw * h_raw * w_raw)
-        if n_img1 is None:
-            # If multiple images were provided (e.g. mask), try splitting evenly.
-            n_imgs = max(1, int(len(images)))
-            if n_imgs > 1 and len(img_positions_all) % n_imgs == 0:
-                per = int(len(img_positions_all) // n_imgs)
-                aspect = None
-                hw = _infer_grid_hw_from_aspect(per, aspect=aspect)
-                if hw is not None:
-                    t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
-                    n_img1 = int(h_i * w_i)
-            if n_img1 is None:
-                # Last resort: factor the token count.
-                hw = _infer_grid_hw_from_aspect(len(img_positions_all), aspect=None)
-                if hw is None:
-                    _warn("Could not infer image grid size (missing image_grid_thw); skipping viz.")
-                    return
-                t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
-                n_img1 = int(h_i * w_i)
-        else:
-            assert t_raw is not None and h_raw is not None and w_raw is not None
-            t_i, h_i, w_i = int(t_raw), int(h_raw), int(w_raw)
-
-            # Reconcile expected token count from `image_grid_thw` with actual image-token count.
-            # Empirically, Qwen-VL often uses a downsampled token grid (e.g. 30x40 -> 15x20).
-            # Use the total image-token count if multiple images are present.
-            expected_total = None
-            try:
-                if grid is not None and hasattr(grid, "shape") and int(grid.shape[0]) >= 1:
-                    exp = 0
-                    for i in range(int(grid.shape[0])):
-                        gi = grid[i].tolist()
-                        if isinstance(gi, (list, tuple)) and len(gi) >= 3:
-                            exp += int(gi[0]) * int(gi[1]) * int(gi[2])
-                    expected_total = int(exp) if exp > 0 else None
-            except Exception:
-                expected_total = None
-
-            actual_total = int(len(img_positions_all))
-            expected_for_ratio = (
-                int(expected_total) if isinstance(expected_total, int) and expected_total > 0 else int(n_img1)
-            )
-            if actual_total > 0 and expected_for_ratio > 0 and expected_for_ratio != actual_total:
-                if expected_for_ratio % actual_total == 0:
-                    ratio = int(expected_for_ratio // actual_total)
-                    s = _is_perfect_square(ratio)
-                    if s is not None and s > 1:
-                        # Adjust grid dims by s if divisible.
-                        if h_i % s == 0 and w_i % s == 0:
-                            h_i //= s
-                            w_i //= s
-                            n_img1 = int(t_i * h_i * w_i)
-
-        img_positions = img_positions_all[:n_img1]
-        if len(img_positions) != n_img1:
-            exp_before = int(n_img1)
-            found = int(len(img_positions_all))
-            _warn(
-                f"Image token count mismatch: expected {exp_before}, found {found}; "
-                "using available tokens for first image."
-            )
-            n_img1 = len(img_positions)
-            aspect = None
-            if isinstance(h_raw, int) and isinstance(w_raw, int) and h_raw > 0 and w_raw > 0:
-                aspect = float(h_raw) / float(w_raw)
-            hw = _infer_grid_hw_from_aspect(n_img1, aspect=aspect)
-            if hw is None:
-                _warn("Could not reshape image tokens into a grid; skipping viz.")
-                return
-            t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
-
-        # Prefer attentions emitted by generate() to avoid an expensive (O(L^2)) full forward pass.
-        gen_attns = None
-        if gen_out is not None:
-            gen_attns = getattr(gen_out, "attentions", None)
-            if gen_attns is None:
-                gen_attns = getattr(gen_out, "decoder_attentions", None)
 
         if output_ids is None and gen_out is not None:
             output_ids = getattr(gen_out, "sequences", None)
-
-        tokenizer = getattr(processor, "tokenizer", None)
-        eos_token_id = getattr(tokenizer, "eos_token_id", None)
-        pad_token_id = getattr(tokenizer, "pad_token_id", None)
-
-        attn_accum = _collect_generated_token_attention(
-            gen_attns=gen_attns,
-            output_ids=output_ids,
-            prompt_len=prompt_len,
-            img_positions=img_positions,
-            tokenizer=tokenizer,
-            eos_token_id=eos_token_id,
-            pad_token_id=pad_token_id,
-            viz_attn_mode=viz_attn_mode,
-            warn=_warn,
-        )
-
-        # Fallback: do a prompt-only forward pass if generation did not provide attentions.
-        if attn_accum is None:
-            _warn("Falling back to prompt-only attention; this is not answer-token attention.")
-            fwd_inputs = dict(inputs)
-            fwd_inputs["attention_mask"] = torch.ones_like(prompt_ids, device=prompt_ids.device)
-            with torch.no_grad():
-                out = model(
-                    **fwd_inputs,
-                    output_attentions=True,
-                    use_cache=False,
-                    return_dict=True,
-                )
-
-            attns = getattr(out, "attentions", None)
-            if not isinstance(attns, (tuple, list)) or not attns:
-                _warn("Model did not return attentions in fallback; skipping viz.")
-                return
-
-            # Use the last prompt token as query.
-            q_idx = int(prompt_len) - 1
-            n_used = 0
-            for layer_attn in attns:
-                if layer_attn is None:
-                    continue
-                # Expected: (bs, heads, seq, seq)
-                if getattr(layer_attn, "ndim", None) != 4:
-                    continue
-                a = layer_attn[0]  # (heads, seq, seq)
-                if int(a.shape[-1]) <= max(img_positions) or int(a.shape[-2]) <= q_idx:
-                    continue
-                vec = a[:, q_idx, img_positions]  # (heads, n_img1)
-                vec = vec.mean(dim=0)  # (n_img1,)
-                attn_accum = vec if attn_accum is None else (attn_accum + vec)
-                n_used += 1
-
-            if n_used > 0 and attn_accum is not None:
-                attn_accum = attn_accum / float(n_used)
-
-        if attn_accum is None:
-            _warn("Could not reduce attentions into a vector; skipping viz.")
+        if output_ids is None or getattr(output_ids, "ndim", None) != 2:
+            _warn("Missing generated sequences; skipping viz.")
             return
 
-        attn_vec = attn_accum.detach().float().cpu()
-        if int(attn_vec.numel()) != int(t_i * h_i * w_i):
-            # Fallback to square reshape.
-            hw = _infer_grid_hw(int(attn_vec.numel()))
-            if hw is None:
-                _warn("Attention vector length does not match grid; skipping viz.")
-                return
-            t_i, h_i, w_i = 1, int(hw[0]), int(hw[1])
-        attn_thw = attn_vec.view(int(t_i), int(h_i), int(w_i))
-        heat_hw = attn_thw.mean(dim=0)  # (h, w)
+        image_start, image_end = _qwen_image_range(prompt_ids[0], model)
+        num_image_tokens = int(image_end - image_start)
+        grid_h, grid_w = _qwen_grid_size(inputs, model, num_image_tokens)
+
+        generated_ids = output_ids[:, input_len:]
+        tokenizer = getattr(processor, "tokenizer", None)
+        if tokenizer is None:
+            _warn("Tokenizer unavailable; skipping viz.")
+            return
+        generated_tokens = tokenizer.convert_ids_to_tokens(generated_ids[0].detach().cpu().tolist())
+        answer_offsets = _qwen_answer_token_offsets(generated_tokens)
+        if not answer_offsets:
+            _warn("No non-special generated answer tokens found; skipping viz.")
+            return
+        if viz_attn_mode == "first_answer_token":
+            answer_offsets = answer_offsets[:1]
+        answer = processor.batch_decode(
+            generated_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )[0]
 
         base_path = (
             viz_out_dir
@@ -261,15 +116,280 @@ def write_attention_overlay(
             / _safe_name(sample_id)
             / _safe_name(task_name)
         )
-        _save_overlay_png(rgb_pil=image, heatmap_hw=heat_hw.numpy(), out_path=Path(f"{base_path}.png"))
+        if viz_save_input_image:
+            _save_qwen_input_images(images=images, fallback_image=image, base_path=base_path)
+
+        full_inputs = _qwen_extend_inputs(inputs, output_ids, input_len)
+        with torch.no_grad():
+            outputs = model(
+                **full_inputs,
+                output_attentions=True,
+                use_cache=False,
+                return_dict=True,
+            )
+
+        _save_qwen_layer_grid(
+            image=image,
+            outputs=outputs,
+            answer=answer,
+            gt=viz_gt,
+            prediction=viz_prediction if viz_prediction is not None else answer,
+            image_id=viz_image_id or sample_id,
+            answer_offsets=answer_offsets,
+            input_len=input_len,
+            image_start=image_start,
+            image_end=image_end,
+            grid_h=grid_h,
+            grid_w=grid_w,
+            out_path=Path(f"{base_path}.png"),
+        )
     except torch.cuda.OutOfMemoryError as exc:
+        try:
+            del outputs
+        except UnboundLocalError:
+            pass
+        try:
+            del full_inputs
+        except UnboundLocalError:
+            pass
+        gc.collect()
         try:
             torch.cuda.empty_cache()
         except Exception:
             pass
         _warn(f"CUDA OOM while extracting attentions ({exc}); continuing without viz.")
+    except ValueError as exc:
+        _warn(f"{exc}; skipping viz.")
     except Exception as exc:
         _warn(f"Failed to write visualization ({type(exc).__name__}: {exc}); continuing without viz.")
+
+
+_QWEN_LAYERS = [-29, -28, -27, -26, -25, -24, -23, -22, -21, -20, -19, -18, -16, -12, -8, -4]
+_QWEN_SIGMA = 30
+
+
+def _qwen_image_range(input_ids, model) -> tuple[int, int]:
+    """Return the first contiguous Qwen image-token span."""
+    import torch
+
+    image_token_id = int(model.config.image_token_id)
+    positions = torch.where(input_ids == image_token_id)[0]
+    if int(positions.numel()) == 0:
+        raise ValueError("No image token positions found in prompt")
+
+    start = int(positions[0].item())
+    end = start + 1
+    for pos in positions[1:].detach().cpu().tolist():
+        if int(pos) != end:
+            break
+        end += 1
+    return start, end
+
+
+def _qwen_grid_size(inputs, model, num_image_tokens: int) -> tuple[int, int]:
+    """Return the supervisor-style merged image-token grid size."""
+    grid = inputs.get("image_grid_thw")
+    if grid is None:
+        raise ValueError("Missing image_grid_thw")
+    t, h, w = [int(v) for v in grid[0].detach().cpu().tolist()]
+    if t != 1:
+        raise ValueError(f"Expected one image frame, got image_grid_thw[0][0]={t}")
+    merge = int(model.config.vision_config.spatial_merge_size)
+    grid_h = h // merge
+    grid_w = w // merge
+    if grid_h * grid_w != int(num_image_tokens):
+        raise ValueError(
+            f"Grid size {grid_h}x{grid_w} does not match {num_image_tokens} image tokens"
+        )
+    return grid_h, grid_w
+
+
+def _qwen_extend_inputs(inputs, sequences, input_len: int):
+    """Append generated ids and masks for a full answer-attention forward pass."""
+    import torch
+
+    full = dict(inputs)
+    full["input_ids"] = sequences
+
+    generated_len = int(sequences.shape[1]) - int(input_len)
+    if generated_len < 0:
+        raise ValueError("Generated sequence is shorter than the prompt")
+
+    attention_mask = inputs.get("attention_mask")
+    if attention_mask is None:
+        raise ValueError("Missing attention_mask")
+    full["attention_mask"] = torch.cat(
+        [
+            attention_mask,
+            torch.ones(
+                attention_mask.shape[0],
+                generated_len,
+                device=attention_mask.device,
+                dtype=attention_mask.dtype,
+            ),
+        ],
+        dim=1,
+    )
+
+    for key in ("token_type_ids", "mm_token_type_ids"):
+        if key in inputs:
+            extra = inputs[key][:, -1:].expand(-1, generated_len)
+            full[key] = torch.cat([inputs[key], extra], dim=1)
+
+    for key in ("position_ids", "rope_deltas", "cache_position"):
+        full.pop(key, None)
+
+    return full
+
+
+def _qwen_answer_token_offsets(tokens: Sequence[str]) -> List[int]:
+    """Return generated token offsets that look like answer content."""
+    offsets: List[int] = []
+    special_tokens = {"<s>", "</s>", "<|im_end|>", "<|endoftext|>"}
+    for i, tok in enumerate(tokens):
+        if tok.startswith("<|") and tok.endswith("|>"):
+            continue
+        if tok in special_tokens:
+            continue
+        offsets.append(i)
+    return offsets
+
+
+def _qwen_attention_for_layer(
+    *,
+    outputs,
+    layer: int,
+    answer_offsets: Sequence[int],
+    input_len: int,
+    image_start: int,
+    image_end: int,
+):
+    """Average one layer's answer-token attention to Qwen image tokens."""
+    import torch
+
+    attn = outputs.attentions[layer][0]
+    maps = []
+    for offset in answer_offsets:
+        query = int(input_len) + int(offset)
+        heads_to_image = attn[:, query, image_start:image_end]
+        maps.append(heads_to_image.mean(dim=0))
+
+    vec = torch.stack(maps).mean(dim=0)
+    return _normalize_array(vec.float().detach().cpu().numpy())
+
+
+def _save_qwen_layer_grid(
+    *,
+    image,
+    outputs,
+    answer: str,
+    gt: object,
+    prediction: object,
+    image_id: str,
+    answer_offsets: Sequence[int],
+    input_len: int,
+    image_start: int,
+    image_end: int,
+    grid_h: int,
+    grid_w: int,
+    out_path: Path,
+) -> None:
+    """Save the supervisor-style grid of Qwen layer overlays."""
+    import math
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cols = 4
+    rows = int(math.ceil(len(_QWEN_LAYERS) / cols))
+    fig = plt.figure(figsize=(4 * cols, 4 * rows))
+
+    for i, layer in enumerate(_QWEN_LAYERS):
+        vec = _qwen_attention_for_layer(
+            outputs=outputs,
+            layer=layer,
+            answer_offsets=answer_offsets,
+            input_len=input_len,
+            image_start=image_start,
+            image_end=image_end,
+        )
+        grid = vec.reshape(int(grid_h), int(grid_w))
+        overlay = _qwen_make_overlay(image, grid)
+        ax = fig.add_subplot(rows, cols, i + 1)
+        ax.imshow(overlay)
+        ax.set_title(f"Layer {layer}")
+        ax.axis("off")
+
+    title = (
+        "Mean answer-to-image attention\n"
+        f"Image: {_format_viz_value(image_id)} | "
+        f"GT: {_format_viz_value(gt)} | "
+        f"Pred: {_format_viz_value(prediction if prediction is not None else answer)}"
+    )
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+
+def _format_viz_value(value: object, *, max_len: int = 80) -> str:
+    """Format metadata values for compact figure titles."""
+    if value is None:
+        return "unknown"
+    text = str(value).strip()
+    if text.startswith("assistant\n"):
+        text = text.split("\n", 1)[1].strip()
+    text = " ".join(text.split())
+    if len(text) > max_len:
+        return text[: max_len - 3] + "..."
+    return text or "unknown"
+
+
+def _validate_viz_attn_mode(viz_attn_mode: str) -> None:
+    """Validate shared attention visualization token-selection modes."""
+    if viz_attn_mode not in _SUPPORTED_VIZ_ATTN_MODES:
+        allowed = ", ".join(sorted(_SUPPORTED_VIZ_ATTN_MODES))
+        raise ValueError(f"Unsupported viz_attn_mode={viz_attn_mode!r}; expected one of: {allowed}")
+
+
+def _save_qwen_input_images(*, images: Sequence, fallback_image, base_path: Path) -> None:
+    """Save the exact PIL image(s) passed to the Qwen processor for inspection."""
+    base_path.parent.mkdir(parents=True, exist_ok=True)
+    model_images = list(images) if images is not None else [fallback_image]
+    if not model_images:
+        model_images = [fallback_image]
+    for i, img in enumerate(model_images):
+        suffix = "_input" if i == 0 else f"_input_{i + 1}"
+        img.convert("RGB").save(Path(f"{base_path}{suffix}.png"))
+
+
+def _qwen_make_overlay(image, grid):
+    """Blend a Qwen attention grid onto the source image."""
+    import cv2
+    import numpy as np
+
+    image_np = np.asarray(image.convert("RGB"))
+    h, w = image_np.shape[:2]
+    heatmap = cv2.resize(grid, (w, h))
+    heatmap = cv2.GaussianBlur(heatmap, (0, 0), _QWEN_SIGMA)
+    heatmap = _normalize_array(heatmap)
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+    overlay = 0.65 * image_np + 0.35 * heatmap
+    return np.uint8(np.clip(overlay, 0, 255))
+
+
+def _normalize_array(x):
+    """Normalize an array to 0-1."""
+    import numpy as np
+
+    arr = np.asarray(x, dtype=np.float32)
+    arr = arr - float(arr.min())
+    return arr / (float(arr.max()) + 1e-8)
 
 
 def write_attention_overlay_sdvlm(
@@ -311,8 +431,8 @@ def write_attention_overlay_sdvlm(
         sample_id: Sample identifier used in the output path.
         task_name: Task name used in the output filename.
         viz_out_dir: Output directory root.  If *None* the function is a no-op.
-        viz_attn_mode: Token selection strategy – ``"all"``,
-            ``"first_answer_token"``, or ``"mcq_answer"``.
+        viz_attn_mode: Token selection strategy – ``"all"`` or
+            ``"first_answer_token"``.
     """
     if viz_out_dir is None:
         return
@@ -327,6 +447,8 @@ def write_attention_overlay_sdvlm(
         print(f"{prefix}{ctx} {msg}")
 
     try:
+        _validate_viz_attn_mode(viz_attn_mode)
+
         # --- Resolve the number of image patch tokens ---
         n_image_tokens: Optional[int] = None
         try:
@@ -473,10 +595,6 @@ def _collect_generated_token_attention(
             if _is_trivial_generated_token(token_text):
                 continue
 
-            stripped = token_text.strip()
-            if mode == "mcq_answer" and stripped not in {"A", "B", "C", "D"}:
-                continue
-
             if not isinstance(step_attns, (tuple, list)):
                 continue
 
@@ -505,13 +623,6 @@ def _collect_generated_token_attention(
             return None
         return torch.stack(vectors, dim=0).mean(dim=0)
 
-    if viz_attn_mode == "mcq_answer":
-        vec = _collect_for_mode("mcq_answer")
-        if vec is None:
-            warn("No MCQ answer token found; falling back to all generated tokens.")
-            return _collect_for_mode("all")
-        return vec
-
     return _collect_for_mode(viz_attn_mode)
 
 
@@ -539,41 +650,6 @@ def _is_trivial_generated_token(token_text: str) -> bool:
     return token_text in trivial or token_text.strip() == ""
 
 
-def _get_image_token_id(processor) -> Optional[int]:
-    """Infer the image token id from a processor tokenizer."""
-    tok = getattr(processor, "tokenizer", None)
-    if tok is None:
-        return None
-    # Many VLM tokenizers expose a direct id.
-    for attr in ("image_token_id", "image_pad_token_id"):
-        val = getattr(tok, attr, None)
-        if isinstance(val, int):
-            return int(val)
-    # Try to infer from additional special tokens.
-    candidates: List[str] = []
-    for t in getattr(tok, "additional_special_tokens", []) or []:
-        ts = str(t)
-        if "image" in ts.lower():
-            candidates.append(ts)
-    if candidates:
-        preferred = None
-        for key in ("image_pad", "image", "img"):
-            for c in candidates:
-                if key in c.lower():
-                    preferred = c
-                    break
-            if preferred is not None:
-                break
-        token = preferred or candidates[0]
-        try:
-            token_id = tok.convert_tokens_to_ids(token)
-            if isinstance(token_id, int) and token_id >= 0:
-                return int(token_id)
-        except Exception:
-            return None
-    return None
-
-
 def _infer_grid_hw(n: int) -> Optional[tuple[int, int]]:
     """Infer a square grid (h, w) for a token count, if possible."""
     if n <= 0:
@@ -582,41 +658,6 @@ def _infer_grid_hw(n: int) -> Optional[tuple[int, int]]:
     if side * side == n:
         return side, side
     return None
-
-
-def _is_perfect_square(n: int) -> Optional[int]:
-    """Return the integer square root if n is a perfect square."""
-    if n <= 0:
-        return None
-    r = int(round(n ** 0.5))
-    return r if r * r == n else None
-
-
-def _infer_grid_hw_from_aspect(n: int, *, aspect: Optional[float]) -> Optional[tuple[int, int]]:
-    """Find (h, w) such that h*w == n and h/w ~= aspect.
-
-    Falls back to any factor pair if aspect is missing.
-    """
-    if n <= 0:
-        return None
-    if aspect is not None and aspect <= 0:
-        aspect = None
-
-    best = None
-    best_err = None
-    r = int(n ** 0.5)
-    for h in range(1, r + 1):
-        if n % h != 0:
-            continue
-        w = n // h
-        for hh, ww in ((h, w), (w, h)):
-            if aspect is None:
-                return int(hh), int(ww)
-            err = abs((float(hh) / float(ww)) - float(aspect))
-            if best is None or best_err is None or err < best_err:
-                best = (int(hh), int(ww))
-                best_err = err
-    return best
 
 
 def _save_overlay_png(

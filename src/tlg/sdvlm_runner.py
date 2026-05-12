@@ -253,7 +253,7 @@ def run_task_sdvlm(
         viz_attn: Whether to extract attention weights and write heatmap overlays.
         viz_out_dir: Output directory for attention visualizations.
         viz_attn_mode: Which generated tokens to use for visualization –
-            ``"all"``, ``"first_answer_token"``, or ``"mcq_answer"``.
+            ``"all"`` or ``"first_answer_token"``.
 
     Returns:
         Model's text response.
@@ -390,7 +390,7 @@ def test_sample_sdvlm(
         viz_attn: Whether to extract attention weights and write heatmap overlays.
         viz_out_dir: Output directory for attention visualizations.
         viz_attn_mode: Which generated tokens to use for visualization –
-            ``"all"``, ``"first_answer_token"``, or ``"mcq_answer"``.
+            ``"all"`` or ``"first_answer_token"``.
 
     Returns:
         Dictionary mapping task names to model responses.

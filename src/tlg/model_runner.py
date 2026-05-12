@@ -88,6 +88,9 @@ def run_task(
     viz_attn: bool = False,
     viz_out_dir: Optional[Path] = None,
     viz_attn_mode: str = "all",
+    viz_image_id: str = "",
+    viz_gt: object = None,
+    viz_save_input_image: bool = False,
 ) -> str:
     """Run a single VLM task.
 
@@ -103,6 +106,9 @@ def run_task(
         viz_attn: Whether to emit attention visualizations.
         viz_out_dir: Output directory for attention visualizations.
         viz_attn_mode: Which generated tokens to use for attention visualization.
+        viz_image_id: Image/sample identifier shown in visualization titles.
+        viz_gt: Ground-truth answer shown in visualization titles.
+        viz_save_input_image: Whether to save the exact input image separately.
 
     Returns:
         Model's text response.
@@ -145,7 +151,6 @@ def run_task(
                 max_new_tokens=MAX_NEW_TOKENS,
                 do_sample=False,
                 return_dict_in_generate=True,
-                output_attentions=True,
             )
             output_ids = gen_out.sequences
         else:
@@ -177,6 +182,10 @@ def run_task(
             task_name=task_name,
             viz_out_dir=viz_out_dir,
             viz_attn_mode=viz_attn_mode,
+            viz_image_id=viz_image_id,
+            viz_gt=viz_gt,
+            viz_prediction=response,
+            viz_save_input_image=viz_save_input_image,
         )
 
     return response
@@ -256,6 +265,7 @@ def test_sample(
         )
         use_region_box = region_box_image is not None
         task_image = region_box_image if use_region_box else target_box_image if use_target_box else rgb_image
+        save_task_input_image = bool(use_region_box or use_target_box)
         prompt = ann.question
         extra_images = None
         if use_region_box:
@@ -282,6 +292,9 @@ def test_sample(
             viz_attn=viz_attn,
             viz_out_dir=viz_out_dir,
             viz_attn_mode=viz_attn_mode,
+            viz_image_id=ann.image_id,
+            viz_gt=ann.answer,
+            viz_save_input_image=save_task_input_image,
         )
         results[task_name] = response
 

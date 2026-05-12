@@ -1,5 +1,6 @@
 numpy
 matplotlib
+opencv-python-headless
 ipykernel
 torch>=2.0.0
 torchvision
