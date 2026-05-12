@@ -45,7 +45,7 @@ _CONTAINER_TYPE_ALIASES = {
 
 _YES_NO_TASKS = {"liquid_presence", "tip_presence"}
 _COUNT_TASKS = {"container_count"}
-_GROUNDING_TASKS = {"tip_liquid_grounding"}
+_GROUNDING_TASKS = {"liquid_grounding"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
 _NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None)}
 _MATERIAL_TYPE_CHOICES = ("LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR")

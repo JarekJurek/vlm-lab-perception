@@ -46,9 +46,9 @@ tip_presence:
   question: "Is there a pipette tip visible in the image? Answer with only 'YES' or 'NO'."
   choices: ["YES", "NO"]
 
-tip_liquid_grounding:
-  task_type: "Tip/Liquid Visual Grounding (bbox)"
-  question: "Locate every Tip and Liquid region. Use coordinates normalized to the 0-1000 image scale. Return only valid JSON in this exact format: [{\"bbox_2d\":[x1,y1,x2,y2],\"label\":\"Tip\"}]. Each object's label must be either \"Tip\" or \"Liquid\"."
+liquid_grounding:
+  task_type: "Liquid Visual Grounding (bbox)"
+  question: "Locate every Liquid region. Use coordinates normalized to the 0-1000 image scale. Return only valid JSON in this exact format: [{\"bbox_2d\":[x1,y1,x2,y2],\"label\":\"Liquid\"}]."
 
 highlighted_region_type:
   task_type: "Lab Region Type Recognition (classification)"

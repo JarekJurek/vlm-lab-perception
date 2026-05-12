@@ -269,36 +269,55 @@ class OT2Dataset:
         liquid_box_count = len(liquid_boxes)
         fill_percentage = _compute_fill_percentage(tip_boxes, liquid_boxes)
 
-        annotations = [
-            add(
-                task="tip_liquid_grounding",
-                answer=_boxes_to_grounding_targets(tip_boxes, liquid_boxes),
-                metadata={
-                    "coordinate_scale": 1000,
-                    "source": "yolo_boxes",
-                },
-            ),
-            add(
-                task="tip_presence",
-                answer="YES" if container_count > 0 else "NO",
-                metadata={"container_count": container_count},
-            ),
-            add(
-                task="liquid_presence",
-                answer="YES" if liquid_box_count > 0 else "NO",
-                metadata={"liquid_box_count": liquid_box_count},
-            ),
-            add(
-                task="container_count",
-                answer=int(container_count),
-                metadata={"container_count": container_count, "source": "tip_boxes"},
-            ),
-            add(
-                task="fill_percentage",
-                answer=float(fill_percentage),
-                metadata={"unit": "percent_of_tip_height"},
-            ),
-        ]
+        annotations: List[TLGAnnotation] = []
+
+        if self._prompt_bank.supports(dataset, "liquid_grounding"):
+            annotations.append(
+                add(
+                    task="liquid_grounding",
+                    answer=_boxes_to_grounding_targets(liquid_boxes),
+                    metadata={
+                        "coordinate_scale": 1000,
+                        "source": "yolo_boxes",
+                    },
+                )
+            )
+
+        if self._prompt_bank.supports(dataset, "tip_presence"):
+            annotations.append(
+                add(
+                    task="tip_presence",
+                    answer="YES" if container_count > 0 else "NO",
+                    metadata={"container_count": container_count},
+                )
+            )
+
+        if self._prompt_bank.supports(dataset, "liquid_presence"):
+            annotations.append(
+                add(
+                    task="liquid_presence",
+                    answer="YES" if liquid_box_count > 0 else "NO",
+                    metadata={"liquid_box_count": liquid_box_count},
+                )
+            )
+
+        if self._prompt_bank.supports(dataset, "container_count"):
+            annotations.append(
+                add(
+                    task="container_count",
+                    answer=int(container_count),
+                    metadata={"container_count": container_count, "source": "tip_boxes"},
+                )
+            )
+
+        if self._prompt_bank.supports(dataset, "fill_percentage"):
+            annotations.append(
+                add(
+                    task="fill_percentage",
+                    answer=float(fill_percentage),
+                    metadata={"unit": "percent_of_tip_height"},
+                )
+            )
 
         if container_count > 0 and self._prompt_bank.supports(dataset, "container_type"):
             annotations.append(
@@ -379,16 +398,15 @@ def _compute_fill_percentage(tip_boxes: List[YoloBox], liquid_boxes: List[YoloBo
     return float(best_fill)
 
 
-def _boxes_to_grounding_targets(tip_boxes: List[YoloBox], liquid_boxes: List[YoloBox]) -> List[Dict[str, object]]:
+def _boxes_to_grounding_targets(liquid_boxes: List[YoloBox]) -> List[Dict[str, object]]:
     targets: List[Dict[str, object]] = []
-    for label, boxes in (("Tip", tip_boxes), ("Liquid", liquid_boxes)):
-        for box in boxes:
-            targets.append(
-                {
-                    "bbox_2d": _yolo_box_to_qwen_bbox(box),
-                    "label": label,
-                }
-            )
+    for box in liquid_boxes:
+        targets.append(
+            {
+                "bbox_2d": _yolo_box_to_qwen_bbox(box),
+                "label": "Liquid",
+            }
+        )
     return targets
 
 
