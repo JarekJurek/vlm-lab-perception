@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--viz-attn-mode",
-        choices=["all", "first_answer_token", "mcq_answer"],
+        choices=["all", "first_answer_token"],
         default="all",
         help="Which generated tokens to use for attention visualization.",
     )

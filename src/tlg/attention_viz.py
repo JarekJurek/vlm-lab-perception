@@ -10,6 +10,7 @@ Supports two backends:
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -122,6 +123,15 @@ def write_attention_overlay(
             out_path=Path(f"{base_path}.png"),
         )
     except torch.cuda.OutOfMemoryError as exc:
+        try:
+            del outputs
+        except UnboundLocalError:
+            pass
+        try:
+            del full_inputs
+        except UnboundLocalError:
+            pass
+        gc.collect()
         try:
             torch.cuda.empty_cache()
         except Exception:
@@ -360,8 +370,8 @@ def write_attention_overlay_sdvlm(
         sample_id: Sample identifier used in the output path.
         task_name: Task name used in the output filename.
         viz_out_dir: Output directory root.  If *None* the function is a no-op.
-        viz_attn_mode: Token selection strategy – ``"all"``,
-            ``"first_answer_token"``, or ``"mcq_answer"``.
+        viz_attn_mode: Token selection strategy – ``"all"`` or
+            ``"first_answer_token"``.
     """
     if viz_out_dir is None:
         return
@@ -522,10 +532,6 @@ def _collect_generated_token_attention(
             if _is_trivial_generated_token(token_text):
                 continue
 
-            stripped = token_text.strip()
-            if mode == "mcq_answer" and stripped not in {"A", "B", "C", "D"}:
-                continue
-
             if not isinstance(step_attns, (tuple, list)):
                 continue
 
@@ -553,13 +559,6 @@ def _collect_generated_token_attention(
         if not vectors:
             return None
         return torch.stack(vectors, dim=0).mean(dim=0)
-
-    if viz_attn_mode == "mcq_answer":
-        vec = _collect_for_mode("mcq_answer")
-        if vec is None:
-            warn("No MCQ answer token found; falling back to all generated tokens.")
-            return _collect_for_mode("all")
-        return vec
 
     return _collect_for_mode(viz_attn_mode)
 
