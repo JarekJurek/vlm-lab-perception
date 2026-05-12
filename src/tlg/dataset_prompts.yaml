@@ -29,6 +29,7 @@ labpicsv1:
   - multiphase_material_presence
 
 ot2:
+  - tip_liquid_grounding
   - tip_presence
   - liquid_presence
   - container_count

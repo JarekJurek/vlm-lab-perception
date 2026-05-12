@@ -271,6 +271,14 @@ class OT2Dataset:
 
         annotations = [
             add(
+                task="tip_liquid_grounding",
+                answer=_boxes_to_grounding_targets(tip_boxes, liquid_boxes),
+                metadata={
+                    "coordinate_scale": 1000,
+                    "source": "yolo_boxes",
+                },
+            ),
+            add(
                 task="tip_presence",
                 answer="YES" if container_count > 0 else "NO",
                 metadata={"container_count": container_count},
@@ -369,6 +377,36 @@ def _compute_fill_percentage(tip_boxes: List[YoloBox], liquid_boxes: List[YoloBo
         best_fill = max(best_fill, fill)
 
     return float(best_fill)
+
+
+def _boxes_to_grounding_targets(tip_boxes: List[YoloBox], liquid_boxes: List[YoloBox]) -> List[Dict[str, object]]:
+    targets: List[Dict[str, object]] = []
+    for label, boxes in (("Tip", tip_boxes), ("Liquid", liquid_boxes)):
+        for box in boxes:
+            targets.append(
+                {
+                    "bbox_2d": _yolo_box_to_qwen_bbox(box),
+                    "label": label,
+                }
+            )
+    return targets
+
+
+def _yolo_box_to_qwen_bbox(box: YoloBox) -> List[int]:
+    x1 = (box.xc - box.w / 2.0) * 1000.0
+    y1 = (box.yc - box.h / 2.0) * 1000.0
+    x2 = (box.xc + box.w / 2.0) * 1000.0
+    y2 = (box.yc + box.h / 2.0) * 1000.0
+    return [
+        _clamp_qwen_coord(x1),
+        _clamp_qwen_coord(y1),
+        _clamp_qwen_coord(x2),
+        _clamp_qwen_coord(y2),
+    ]
+
+
+def _clamp_qwen_coord(value: float) -> int:
+    return int(round(max(0.0, min(1000.0, float(value)))))
 
 
 def _load_yolo_class_names(root: Path) -> Dict[int, str]:

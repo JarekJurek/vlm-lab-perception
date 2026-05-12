@@ -329,6 +329,18 @@ def _record_results(
                 row["abs_error"] = rec["abs_error"]
             if "within_tol" in rec:
                 row["within_tol"] = rec["within_tol"]
+            for key in (
+                "n_gt_boxes",
+                "n_pred_boxes",
+                "n_matched_boxes",
+                "precision",
+                "recall",
+                "f1",
+                "mean_iou",
+                "iou_threshold",
+            ):
+                if key in rec:
+                    row[key] = rec[key]
             pred_fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
