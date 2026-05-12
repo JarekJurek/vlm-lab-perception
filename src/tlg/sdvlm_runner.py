@@ -133,12 +133,38 @@ def load_sdvlm_model(
     dtype = torch.float16 if device.type == "cuda" else torch.float32
 
     model.to(device=device, dtype=dtype)
-    model.use_depth = use_depth
-    model.gt_depth = gt_depth
-    model.vit_depth = False
+    _set_sdvlm_runtime_flags(model, use_depth=use_depth, gt_depth=gt_depth, vit_depth=False)
 
     print("SD-VLM model loaded successfully.")
     return model, tokenizer, image_processor
+
+
+def _set_sdvlm_runtime_flags(
+    model: Any,
+    *,
+    use_depth: Optional[bool] = None,
+    gt_depth: Optional[bool] = None,
+    vit_depth: Optional[bool] = None,
+) -> None:
+    """Keep SD-VLM runtime flags in sync with the HF config object.
+
+    The published checkpoint has depth flags in ``config.json``.  Some SD-VLM
+    code paths read attributes from the model while others read from
+    ``model.config``, so update both to avoid stale checkpoint defaults.
+    """
+
+    config = getattr(model, "config", None)
+    for name, value in (
+        ("use_depth", use_depth),
+        ("gt_depth", gt_depth),
+        ("vit_depth", vit_depth),
+    ):
+        if value is None:
+            continue
+        value = bool(value)
+        setattr(model, name, value)
+        if config is not None:
+            setattr(config, name, value)
 
 
 def depth_array_to_pil(depth_array: np.ndarray) -> Any:
@@ -258,7 +284,12 @@ def run_task_sdvlm(
     image_tensor = process_images([image], image_processor, model.config)[0]
 
     # ori_imgs: depth image when gt_depth is set, copy of RGB otherwise.
-    if model.gt_depth and depth_image is not None:
+    # If a dataset has no GT depth, force SD-VLM back to its internal depth
+    # estimator for this call instead of leaving the checkpoint's gt_depth=True
+    # config active.
+    requested_gt_depth = bool(getattr(model, "gt_depth", False))
+    effective_gt_depth = requested_gt_depth and depth_image is not None
+    if effective_gt_depth:
         ori_img = depth_image
     else:
         ori_img = copy.deepcopy(image)
@@ -267,37 +298,48 @@ def run_task_sdvlm(
     input_ids = input_ids.to(device)
     image_tensor = image_tensor.unsqueeze(0).half().to(device)
 
+    old_model_gt_depth = getattr(model, "gt_depth", None)
+    old_config_gt_depth = getattr(getattr(model, "config", None), "gt_depth", None)
+
     gen_out = None
-    with torch.inference_mode():
-        if viz_attn:
-            gen_out = model.generate(
-                input_ids,
-                images=image_tensor,
-                image_sizes=[image.size],
-                do_sample=False,
-                temperature=0,
-                top_p=None,
-                num_beams=1,
-                ori_imgs=[ori_img],
-                max_new_tokens=MAX_NEW_TOKENS,
-                use_cache=True,
-                return_dict_in_generate=True,
-                output_attentions=True,
-            )
-            output_ids = gen_out.sequences
-        else:
-            output_ids = model.generate(
-                input_ids,
-                images=image_tensor,
-                image_sizes=[image.size],
-                do_sample=False,
-                temperature=0,
-                top_p=None,
-                num_beams=1,
-                ori_imgs=[ori_img],
-                max_new_tokens=MAX_NEW_TOKENS,
-                use_cache=True,
-            )
+    try:
+        _set_sdvlm_runtime_flags(model, gt_depth=effective_gt_depth)
+        with torch.inference_mode():
+            if viz_attn:
+                gen_out = model.generate(
+                    input_ids,
+                    images=image_tensor,
+                    image_sizes=[image.size],
+                    do_sample=False,
+                    temperature=0,
+                    top_p=None,
+                    num_beams=1,
+                    ori_imgs=[ori_img],
+                    max_new_tokens=MAX_NEW_TOKENS,
+                    use_cache=True,
+                    return_dict_in_generate=True,
+                    output_attentions=True,
+                )
+                output_ids = gen_out.sequences
+            else:
+                output_ids = model.generate(
+                    input_ids,
+                    images=image_tensor,
+                    image_sizes=[image.size],
+                    do_sample=False,
+                    temperature=0,
+                    top_p=None,
+                    num_beams=1,
+                    ori_imgs=[ori_img],
+                    max_new_tokens=MAX_NEW_TOKENS,
+                    use_cache=True,
+                )
+    finally:
+        if old_model_gt_depth is not None:
+            setattr(model, "gt_depth", old_model_gt_depth)
+        config = getattr(model, "config", None)
+        if config is not None and old_config_gt_depth is not None:
+            setattr(config, "gt_depth", old_config_gt_depth)
 
     response = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
