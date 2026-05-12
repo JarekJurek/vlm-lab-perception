@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ast
+import json
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .annotations import TLGAnnotation
 
@@ -43,6 +45,7 @@ _CONTAINER_TYPE_ALIASES = {
 
 _YES_NO_TASKS = {"liquid_presence", "tip_presence"}
 _COUNT_TASKS = {"container_count"}
+_GROUNDING_TASKS = {"liquid_grounding"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
 _NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None)}
 _MATERIAL_TYPE_CHOICES = ("LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR")
@@ -185,6 +188,10 @@ def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[o
     """Parse model response into (canonical_prediction, is_valid)."""
     task = _task_name(ann)
 
+    if task in _GROUNDING_TASKS:
+        pred = parse_grounding_boxes(response)
+        return pred, pred is not None
+
     if task == "material_types_present":
         pred = parse_material_types(response)
         return pred, pred is not None
@@ -260,6 +267,185 @@ def _numeric_tolerance(task: str, tol_overrides: Optional[Dict[str, float]]) -> 
     return default_tolerance(task)
 
 
+def parse_grounding_boxes(text: str) -> Optional[List[Dict[str, object]]]:
+    payload = _load_json_like(text)
+    if payload is None:
+        return None
+
+    if isinstance(payload, dict):
+        for key in ("objects", "detections", "boxes", "regions", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                payload = value
+                break
+
+    if not isinstance(payload, list):
+        return None
+
+    out: List[Dict[str, object]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            return None
+        label = _canonical_grounding_label(item.get("label"))
+        bbox = item.get("bbox_2d", item.get("bbox"))
+        if label is None or not isinstance(bbox, list) or len(bbox) != 4:
+            return None
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            return None
+        if x2 <= x1 or y2 <= y1:
+            return None
+        out.append(
+            {
+                "bbox_2d": [
+                    _clamp_coord(x1),
+                    _clamp_coord(y1),
+                    _clamp_coord(x2),
+                    _clamp_coord(y2),
+                ],
+                "label": label,
+            }
+        )
+    return out
+
+
+def _load_json_like(text: str) -> Optional[Any]:
+    s = norm_text(text)
+    if not s:
+        return None
+
+    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", s, flags=re.IGNORECASE | re.DOTALL)
+    if fenced:
+        s = fenced.group(1).strip()
+
+    for candidate in _json_candidates(s):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+        try:
+            return ast.literal_eval(candidate)
+        except (SyntaxError, ValueError):
+            pass
+    return None
+
+
+def _json_candidates(s: str) -> Iterable[str]:
+    yield s
+    start_list = s.find("[")
+    end_list = s.rfind("]")
+    if 0 <= start_list < end_list:
+        yield s[start_list : end_list + 1]
+    start_obj = s.find("{")
+    end_obj = s.rfind("}")
+    if 0 <= start_obj < end_obj:
+        yield s[start_obj : end_obj + 1]
+
+
+def _canonical_grounding_label(value: object) -> Optional[str]:
+    compact = _compact_alnum(value)
+    if compact in {"tip", "pipettetip"}:
+        return "Tip"
+    if compact == "liquid":
+        return "Liquid"
+    return None
+
+
+def _clamp_coord(value: float) -> float:
+    return max(0.0, min(1000.0, float(value)))
+
+
+def _score_grounding(pred: object, gt: object, *, iou_threshold: float = 0.5) -> Dict[str, object]:
+    pred_boxes = _coerce_grounding_targets(pred)
+    gt_boxes = _coerce_grounding_targets(gt)
+    if pred_boxes is None or gt_boxes is None:
+        return {"correct": None}
+
+    matched_pred: set[int] = set()
+    matches = 0
+    iou_sum = 0.0
+
+    for gt_item in gt_boxes:
+        best_idx: Optional[int] = None
+        best_iou = 0.0
+        gt_label = str(gt_item["label"])
+        gt_box = gt_item["bbox_2d"]
+        for idx, pred_item in enumerate(pred_boxes):
+            if idx in matched_pred:
+                continue
+            if str(pred_item["label"]) != gt_label:
+                continue
+            iou = _bbox_iou(gt_box, pred_item["bbox_2d"])
+            if iou > best_iou:
+                best_iou = iou
+                best_idx = idx
+        if best_idx is not None and best_iou >= iou_threshold:
+            matched_pred.add(best_idx)
+            matches += 1
+            iou_sum += best_iou
+
+    n_gt = len(gt_boxes)
+    n_pred = len(pred_boxes)
+    precision = float(matches) / float(n_pred) if n_pred else (1.0 if n_gt == 0 else 0.0)
+    recall = float(matches) / float(n_gt) if n_gt else (1.0 if n_pred == 0 else 0.0)
+    f1 = (2.0 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+
+    return {
+        "correct": bool(matches == n_gt and matches == n_pred),
+        "n_gt_boxes": n_gt,
+        "n_pred_boxes": n_pred,
+        "n_matched_boxes": matches,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "mean_iou": (iou_sum / float(matches)) if matches else 0.0,
+        "iou_threshold": float(iou_threshold),
+    }
+
+
+def _coerce_grounding_targets(value: object) -> Optional[List[Dict[str, Any]]]:
+    if not isinstance(value, list):
+        return None
+    out: List[Dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            return None
+        label = _canonical_grounding_label(item.get("label"))
+        bbox = item.get("bbox_2d")
+        if label is None or not isinstance(bbox, list) or len(bbox) != 4:
+            return None
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            return None
+        if x2 <= x1 or y2 <= y1:
+            return None
+        out.append(
+            {
+                "label": label,
+                "bbox_2d": [_clamp_coord(x1), _clamp_coord(y1), _clamp_coord(x2), _clamp_coord(y2)],
+            }
+        )
+    return out
+
+
+def _bbox_iou(a: List[float], b: List[float]) -> float:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0.0 else 0.0
+
+
 def score_prediction(
     ann: TLGAnnotation,
     response: str,
@@ -307,6 +493,10 @@ def score_prediction(
         record["correct"] = bool(int(pred) == int(gt)) if isinstance(gt, (int, float)) else None
         return record
 
+    if task in _GROUNDING_TASKS:
+        record.update(_score_grounding(pred, gt))
+        return record
+
     record["correct"] = labels_equal(task, pred, gt)
     return record
 
@@ -319,6 +509,11 @@ class TaskStats:
     abs_error_sum: float = 0.0
     n_abs_error: int = 0
     n_within_tol: int = 0
+    precision_sum: float = 0.0
+    recall_sum: float = 0.0
+    f1_sum: float = 0.0
+    mean_iou_sum: float = 0.0
+    n_grounding: int = 0
 
     def update_from_record(self, rec: Dict[str, object]) -> None:
         self.n += 1
@@ -336,6 +531,17 @@ class TaskStats:
         if rec.get("within_tol") is True:
             self.n_within_tol += 1
 
+        precision = rec.get("precision")
+        recall = rec.get("recall")
+        f1 = rec.get("f1")
+        mean_iou = rec.get("mean_iou")
+        if all(isinstance(v, (int, float)) for v in (precision, recall, f1, mean_iou)):
+            self.precision_sum += float(precision)
+            self.recall_sum += float(recall)
+            self.f1_sum += float(f1)
+            self.mean_iou_sum += float(mean_iou)
+            self.n_grounding += 1
+
     def to_dict(self) -> Dict[str, object]:
         out: Dict[str, object] = {
             "n": int(self.n),
@@ -349,4 +555,9 @@ class TaskStats:
             out["mae"] = float(self.abs_error_sum) / float(self.n_abs_error)
         if self.n_abs_error > 0 or self.n_within_tol > 0:
             out["within_tol"] = float(self.n_within_tol) / float(self.n_valid) if self.n_valid else None
+        if self.n_grounding > 0:
+            out["precision"] = self.precision_sum / float(self.n_grounding)
+            out["recall"] = self.recall_sum / float(self.n_grounding)
+            out["f1"] = self.f1_sum / float(self.n_grounding)
+            out["mean_iou"] = self.mean_iou_sum / float(self.n_grounding)
         return out
