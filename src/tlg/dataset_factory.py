@@ -22,7 +22,16 @@ DATA_ROOTS = {
     "pouring": Path("data") / "pouring",
     "ot2": Path("data") / "OT2-Computer-Vision",
 }
-def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank, include_depth: bool = False, shuffle: bool = False, seed: Optional[int] = None) -> Any:
+def build_dataset(
+    dataset_name: str,
+    data_root: Path,
+    *,
+    prompt_bank: PromptBank,
+    include_depth: bool = False,
+    shuffle: bool = False,
+    seed: Optional[int] = None,
+    debug_dtld_boxes: bool = False,
+) -> Any:
     """Construct a dataset instance for a given dataset name.
 
     Args:
@@ -42,7 +51,14 @@ def build_dataset(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank
     if dataset_name == "glasses":
         return GlassesInTheWildDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "dtld":
-        return DTLDDataset(data_root, rgb_only=True, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
+        return DTLDDataset(
+            data_root,
+            rgb_only=True,
+            prompt_bank=prompt_bank,
+            shuffle=shuffle,
+            seed=seed,
+            debug_boxes=debug_dtld_boxes,
+        )
     if dataset_name == "labpicsv1":
         return LabPicsV1Dataset(data_root, split="train", prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "pouring":

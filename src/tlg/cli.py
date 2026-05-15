@@ -95,6 +95,23 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--debug-dtld-boxes",
+        action="store_true",
+        help=(
+            "Print DTLD bbox/mask state and save raw, mask, boxed, and final model-input "
+            "images for checking whether target boxes are visible."
+        ),
+    )
+    parser.add_argument(
+        "--debug-image-out",
+        type=str,
+        default="",
+        help=(
+            "Output directory for --debug-dtld-boxes images. Defaults to "
+            "{viz_out}/debug_dtld_boxes when --viz-out is set, otherwise results/debug_dtld_boxes."
+        ),
+    )
+    parser.add_argument(
         "--tol",
         action="append",
         default=[],

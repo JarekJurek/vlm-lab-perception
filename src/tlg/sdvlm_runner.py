@@ -46,6 +46,7 @@ import numpy as np
 
 from tlg.annotations import TLGAnnotation
 from tlg.attention_viz import write_attention_overlay_sdvlm
+from tlg.debug_viz import debug_dtld_box_state, save_dtld_box_debug_images
 from tlg.prompts import PromptBank
 from tlg.target_overlay import make_target_box_overlay, should_mark_target_box
 
@@ -374,6 +375,8 @@ def test_sample_sdvlm(
     viz_attn: bool = False,
     viz_out_dir: Optional[Path] = None,
     viz_attn_mode: str = "all",
+    debug_dtld_boxes: bool = False,
+    debug_image_out_dir: Optional[Path] = None,
 ) -> Dict[str, str]:
     """Test all tasks on a single sample with SD-VLM.
 
@@ -423,6 +426,7 @@ def test_sample_sdvlm(
         comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
 
     target_box_image = None
+    mask_image = None
     mask_path = sample.get("mask_image")
     if mask_path is not None:
         try:
@@ -458,6 +462,26 @@ def test_sample_sdvlm(
         use_region_box = region_box_image is not None
         task_image = region_box_image if use_region_box else target_box_image if use_target_box else rgb_image
         prompt = ann.question
+        if debug_dtld_boxes and dataset_name == "dtld":
+            debug_dtld_box_state(
+                prefix="SD-VLM",
+                sample=sample,
+                task_name=task_name,
+                use_target_box=use_target_box,
+                use_region_box=use_region_box,
+                target_box_image=target_box_image,
+            )
+            if debug_image_out_dir is not None:
+                save_dtld_box_debug_images(
+                    out_dir=debug_image_out_dir,
+                    model_key="sdvlm",
+                    sample_id=sample_id,
+                    task_name=task_name,
+                    rgb_image=rgb_image,
+                    mask_image=mask_image,
+                    target_box_image=target_box_image,
+                    task_image=task_image,
+                )
         if use_region_box:
             prompt = target_region_prompt + prompt
         elif use_target_box:
