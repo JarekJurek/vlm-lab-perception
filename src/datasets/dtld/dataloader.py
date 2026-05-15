@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 import numpy as np
 
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
+from tlg.target_overlay import is_valid_bbox_xywh
 
 
 _DTLD_OBJECT_NAMES = {
@@ -76,6 +77,7 @@ class DTLDDataset:
         prompt_bank: Optional[PromptBank] = None,
         shuffle: bool = False,
         seed: Optional[int] = None,
+        debug_boxes: bool = False,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
@@ -86,6 +88,7 @@ class DTLDDataset:
         self._skip_bad_scenes = bool(skip_bad_scenes)
         self._prompt_bank = prompt_bank or PromptBank.default()
         self._seed = seed
+        self._debug_boxes = bool(debug_boxes)
         self._scene_cache: Dict[str, Dict[str, object]] = {}
         self._entries = self._build_entries()
 
@@ -202,6 +205,7 @@ class DTLDDataset:
         info = cast(Optional[Dict[str, List[Dict[str, Any]]]], scene_data.get("info"))
         frame_infos = info.get(str(frame_id)) if info is not None and str(frame_id) in info else None
         sample["container_count"] = _count_dtld_visible_containers(frame_liquid_objects, frame_infos)
+        frame_info = None
         if info is not None and str(frame_id) in info and obj_idx < len(info[str(frame_id)]):
             frame_info = info[str(frame_id)][obj_idx]
             if "bbox_obj" in frame_info:
@@ -228,6 +232,14 @@ class DTLDDataset:
         if mask_visib_liquid_path.exists():
             sample["mask_visib_liquid_image"] = mask_visib_liquid_path
 
+        if self._debug_boxes:
+            self._print_box_debug(
+                sample=sample,
+                info_loaded=info is not None,
+                frame_info_count=len(frame_infos) if frame_infos is not None else None,
+                frame_info=frame_info,
+            )
+
         if not self._rgb_only:
             depth_path = scene_dir / "depth" / f"{frame_id:06d}.png"
             if depth_path.exists():
@@ -236,6 +248,26 @@ class DTLDDataset:
         sample["annotations"] = self._build_annotations(sample)
 
         return sample
+
+    def _print_box_debug(
+        self,
+        *,
+        sample: Dict[str, object],
+        info_loaded: bool,
+        frame_info_count: Optional[int],
+        frame_info: Optional[Dict[str, Any]],
+    ) -> None:
+        bbox_visib = sample.get("bbox_visib")
+        bbox_obj = sample.get("bbox_obj")
+        print(
+            "  [DTLD dataloader bbox debug] "
+            f"id={sample.get('id')} "
+            f"info_loaded={info_loaded} "
+            f"frame_info_count={frame_info_count} "
+            f"frame_info_for_obj={frame_info is not None} "
+            f"bbox_visib={bbox_visib!r} valid_visib={is_valid_bbox_xywh(bbox_visib)} "
+            f"bbox_obj={bbox_obj!r} valid_obj={is_valid_bbox_xywh(bbox_obj)}"
+        )
 
     def _build_annotations(self, sample: Dict[str, object]) -> List[TLGAnnotation]:
         dataset = "dtld"

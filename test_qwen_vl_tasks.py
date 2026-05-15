@@ -57,6 +57,15 @@ def main():
     viz_out_dir = Path(args.viz_out) if args.viz_out else None
     if viz_attn and viz_out_dir is None:
         raise ValueError("--viz-attn requires --viz-out")
+    debug_dtld_boxes = bool(args.debug_dtld_boxes)
+    debug_image_out_dir = None
+    if debug_dtld_boxes:
+        if args.debug_image_out:
+            debug_image_out_dir = Path(args.debug_image_out)
+        elif viz_out_dir is not None:
+            debug_image_out_dir = viz_out_dir / "debug_dtld_boxes"
+        else:
+            debug_image_out_dir = Path("results") / "debug_dtld_boxes"
 
     # --- Load models ---
     model = processor = None
@@ -103,7 +112,13 @@ def main():
             continue
 
         dataset = build_dataset(
-            dataset_name, data_root, prompt_bank=prompt_bank, include_depth=include_depth, shuffle=args.shuffle, seed=int(args.seed)
+            dataset_name,
+            data_root,
+            prompt_bank=prompt_bank,
+            include_depth=include_depth,
+            shuffle=args.shuffle,
+            seed=int(args.seed),
+            debug_dtld_boxes=debug_dtld_boxes,
         )
         print(f"Dataset size: {len(dataset)}")
         task_pool_counts = _primary_task_counts(dataset)
@@ -181,6 +196,8 @@ def main():
                         viz_attn=viz_attn,
                         viz_out_dir=viz_out_dir,
                         viz_attn_mode=str(args.viz_attn_mode),
+                        debug_dtld_boxes=debug_dtld_boxes,
+                        debug_image_out_dir=debug_image_out_dir,
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
                     print(f"[Qwen] Failed to load images for sample index={idx0}: {e}")
@@ -216,6 +233,8 @@ def main():
                         viz_attn=viz_attn,
                         viz_out_dir=viz_out_dir,
                         viz_attn_mode=str(args.viz_attn_mode),
+                        debug_dtld_boxes=debug_dtld_boxes,
+                        debug_image_out_dir=debug_image_out_dir,
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
                     print(f"[SD-VLM] Failed to load images for sample index={idx0}: {e}")

@@ -46,8 +46,9 @@ import numpy as np
 
 from tlg.annotations import TLGAnnotation
 from tlg.attention_viz import write_attention_overlay_sdvlm
+from tlg.debug_viz import debug_dtld_box_state, save_dtld_box_debug_images
 from tlg.prompts import PromptBank
-from tlg.target_overlay import make_target_box_overlay, should_mark_target_box
+from tlg.target_overlay import is_valid_bbox_xywh, make_target_box_overlay, should_mark_target_box
 
 
 SDVLM_MODEL_NAME = "cpystan/SD-VLM-7B"
@@ -374,6 +375,8 @@ def test_sample_sdvlm(
     viz_attn: bool = False,
     viz_out_dir: Optional[Path] = None,
     viz_attn_mode: str = "all",
+    debug_dtld_boxes: bool = False,
+    debug_image_out_dir: Optional[Path] = None,
 ) -> Dict[str, str]:
     """Test all tasks on a single sample with SD-VLM.
 
@@ -423,14 +426,9 @@ def test_sample_sdvlm(
         comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
 
     target_box_image = None
-    mask_path = sample.get("mask_image")
-    if mask_path is not None:
-        try:
-            mask_image = _open_rgb_image(mask_path, label="mask image")
-            bbox = sample.get("bbox_visib") or sample.get("bbox_obj")
-            target_box_image = make_target_box_overlay(rgb_image, mask_image, bbox=bbox)
-        except OSError:
-            target_box_image = None
+    bbox = sample.get("bbox_visib") or sample.get("bbox_obj")
+    if is_valid_bbox_xywh(bbox):
+        target_box_image = make_target_box_overlay(rgb_image, rgb_image, bbox=bbox)
 
     # --- Load depth image (optional, only used when model.gt_depth is True) ---
     depth_image: Optional[Any] = None
@@ -458,6 +456,25 @@ def test_sample_sdvlm(
         use_region_box = region_box_image is not None
         task_image = region_box_image if use_region_box else target_box_image if use_target_box else rgb_image
         prompt = ann.question
+        if debug_dtld_boxes and dataset_name == "dtld":
+            debug_dtld_box_state(
+                prefix="SD-VLM",
+                sample=sample,
+                task_name=task_name,
+                use_target_box=use_target_box,
+                use_region_box=use_region_box,
+                target_box_image=target_box_image,
+            )
+            if debug_image_out_dir is not None:
+                save_dtld_box_debug_images(
+                    out_dir=debug_image_out_dir,
+                    model_key="sdvlm",
+                    sample_id=sample_id,
+                    task_name=task_name,
+                    rgb_image=rgb_image,
+                    target_box_image=target_box_image,
+                    task_image=task_image,
+                )
         if use_region_box:
             prompt = target_region_prompt + prompt
         elif use_target_box:
