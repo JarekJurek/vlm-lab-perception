@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any, Optional, Tuple
 
 
 DTLD_TARGET_BOX_TASKS = frozenset(
@@ -59,10 +60,21 @@ def make_target_box_overlay(
     return marked
 
 
+def is_valid_bbox_xywh(bbox: object) -> bool:
+    """Return whether ``bbox`` is a valid ``[x, y, width, height]`` box."""
+
+    if not isinstance(bbox, Sequence) or isinstance(bbox, (str, bytes)):
+        return False
+    return _xyxy_from_bbox(bbox) is not None
+
+
 def _xyxy_from_bbox(bbox: Sequence[float]) -> Optional[Tuple[float, float, float, float]]:
     if len(bbox) < 4:
         return None
-    x, y, w, h = [float(v) for v in bbox[:4]]
+    try:
+        x, y, w, h = [float(v) for v in bbox[:4]]
+    except (TypeError, ValueError):
+        return None
     if w <= 0 or h <= 0:
         return None
     return x, y, x + w, y + h

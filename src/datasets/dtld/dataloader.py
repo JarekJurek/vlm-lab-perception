@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 import numpy as np
 
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
+from tlg.target_overlay import is_valid_bbox_xywh
 
 
 _DTLD_OBJECT_NAMES = {
@@ -47,16 +48,6 @@ def _has_visible_area(info: Dict[str, Any]) -> bool:
             return float(w) > 0.0 and float(h) > 0.0
 
     return True
-
-
-def _valid_xywh(value: object) -> bool:
-    if not isinstance(value, list) or len(value) < 4:
-        return False
-    try:
-        _x, _y, w, h = [float(v) for v in value[:4]]
-    except (TypeError, ValueError):
-        return False
-    return w > 0 and h > 0
 
 
 def _count_dtld_visible_containers(
@@ -247,8 +238,6 @@ class DTLDDataset:
                 info_loaded=info is not None,
                 frame_info_count=len(frame_infos) if frame_infos is not None else None,
                 frame_info=frame_info,
-                mask_visib_path=mask_visib_path,
-                mask_full_path=mask_full_path,
             )
 
         if not self._rgb_only:
@@ -267,8 +256,6 @@ class DTLDDataset:
         info_loaded: bool,
         frame_info_count: Optional[int],
         frame_info: Optional[Dict[str, Any]],
-        mask_visib_path: Path,
-        mask_full_path: Path,
     ) -> None:
         bbox_visib = sample.get("bbox_visib")
         bbox_obj = sample.get("bbox_obj")
@@ -278,10 +265,8 @@ class DTLDDataset:
             f"info_loaded={info_loaded} "
             f"frame_info_count={frame_info_count} "
             f"frame_info_for_obj={frame_info is not None} "
-            f"bbox_visib={bbox_visib!r} valid_visib={_valid_xywh(bbox_visib)} "
-            f"bbox_obj={bbox_obj!r} valid_obj={_valid_xywh(bbox_obj)} "
-            f"mask_visib_exists={mask_visib_path.exists()} "
-            f"mask_full_exists={mask_full_path.exists()}"
+            f"bbox_visib={bbox_visib!r} valid_visib={is_valid_bbox_xywh(bbox_visib)} "
+            f"bbox_obj={bbox_obj!r} valid_obj={is_valid_bbox_xywh(bbox_obj)}"
         )
 
     def _build_annotations(self, sample: Dict[str, object]) -> List[TLGAnnotation]:

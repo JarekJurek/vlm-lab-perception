@@ -98,7 +98,7 @@ def parse_args() -> argparse.Namespace:
         "--debug-dtld-boxes",
         action="store_true",
         help=(
-            "Print DTLD bbox/mask state and save raw, mask, boxed, and final model-input "
+            "Print DTLD bbox state and save raw, boxed, and final model-input "
             "images for checking whether target boxes are visible."
         ),
     )
