@@ -19,6 +19,10 @@ _DTLD_OBJECT_NAMES = {
     19: "G-rex",
 }
 
+# Treat a DTLD target as occluded when its box is substantially on top of another
+# annotated object box. The overlap is measured against the smaller box.
+_DEFAULT_OCCLUDED_BBOX_OVERLAP_THRESHOLD = 0.6
+
 
 def _as_int(value: object) -> Optional[int]:
     if isinstance(value, bool):
@@ -50,6 +54,98 @@ def _has_visible_area(info: Dict[str, Any]) -> bool:
     return True
 
 
+def _bbox_xywh(bbox: object) -> Optional[Tuple[float, float, float, float]]:
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return None
+    try:
+        x, y, w, h = [float(v) for v in bbox[:4]]
+    except (TypeError, ValueError):
+        return None
+    if w <= 0.0 or h <= 0.0:
+        return None
+    return x, y, w, h
+
+
+def _bbox_area(box: Tuple[float, float, float, float]) -> float:
+    return box[2] * box[3]
+
+
+def _bbox_intersection_area(
+    a: Tuple[float, float, float, float],
+    b: Tuple[float, float, float, float],
+) -> float:
+    ax0, ay0, aw, ah = a
+    bx0, by0, bw, bh = b
+    ax1 = ax0 + aw
+    ay1 = ay0 + ah
+    bx1 = bx0 + bw
+    by1 = by0 + bh
+    return max(0.0, min(ax1, bx1) - max(ax0, bx0)) * max(0.0, min(ay1, by1) - max(ay0, by0))
+
+
+def _max_bbox_overlap_fraction(
+    target_bbox: object,
+    infos: Optional[List[Dict[str, Any]]],
+    *,
+    target_idx: int,
+    bbox_key: str,
+) -> float:
+    target = _bbox_xywh(target_bbox)
+    if target is None or infos is None:
+        return 0.0
+
+    target_area = _bbox_area(target)
+    max_overlap = 0.0
+    for other_idx, other_info in enumerate(infos):
+        if other_idx == target_idx:
+            continue
+        other = _bbox_xywh(other_info.get(bbox_key))
+        if other is None:
+            continue
+        denom = min(target_area, _bbox_area(other))
+        if denom <= 0.0:
+            continue
+        max_overlap = max(max_overlap, _bbox_intersection_area(target, other) / denom)
+    return max_overlap
+
+
+def _is_dtld_target_occluded(
+    info: Optional[Dict[str, Any]],
+    infos: Optional[List[Dict[str, Any]]],
+    *,
+    target_idx: int,
+    bbox_overlap_threshold: float,
+) -> Tuple[bool, Dict[str, object]]:
+    metadata: Dict[str, object] = {
+        "occlusion_bbox_overlap_threshold": bbox_overlap_threshold,
+    }
+    if info is None:
+        metadata["occlusion_reason"] = "missing_info"
+        return False, metadata
+
+    max_visible_overlap = _max_bbox_overlap_fraction(
+        info.get("bbox_visib"),
+        infos,
+        target_idx=target_idx,
+        bbox_key="bbox_visib",
+    )
+    max_full_overlap = _max_bbox_overlap_fraction(
+        info.get("bbox_obj"),
+        infos,
+        target_idx=target_idx,
+        bbox_key="bbox_obj",
+    )
+    metadata["max_bbox_visib_overlap_fraction"] = round(max_visible_overlap, 6)
+    metadata["max_bbox_obj_overlap_fraction"] = round(max_full_overlap, 6)
+
+    if max_visible_overlap >= bbox_overlap_threshold or max_full_overlap >= bbox_overlap_threshold:
+        metadata["occlusion_reason"] = "bbox_overlap"
+        return True, metadata
+
+    metadata["occlusion_reason"] = None
+    return False, metadata
+
+
 def _count_dtld_visible_containers(
     objects: List[Dict[str, Any]],
     infos: Optional[List[Dict[str, Any]]],
@@ -78,6 +174,8 @@ class DTLDDataset:
         shuffle: bool = False,
         seed: Optional[int] = None,
         debug_boxes: bool = False,
+        skip_occluded_target_questions: bool = True,
+        occluded_bbox_overlap_threshold: float = _DEFAULT_OCCLUDED_BBOX_OVERLAP_THRESHOLD,
     ) -> None:
         self.root = Path(root)
         if not self.root.exists():
@@ -89,6 +187,8 @@ class DTLDDataset:
         self._prompt_bank = prompt_bank or PromptBank.default()
         self._seed = seed
         self._debug_boxes = bool(debug_boxes)
+        self._skip_occluded_target_questions = bool(skip_occluded_target_questions)
+        self._occluded_bbox_overlap_threshold = float(occluded_bbox_overlap_threshold)
         self._scene_cache: Dict[str, Dict[str, object]] = {}
         self._entries = self._build_entries()
 
@@ -269,6 +369,15 @@ class DTLDDataset:
             if "visib_fract" in frame_info:
                 sample["visib_fract"] = frame_info["visib_fract"]
 
+        target_occluded, occlusion_metadata = _is_dtld_target_occluded(
+            frame_info,
+            frame_infos,
+            target_idx=obj_idx,
+            bbox_overlap_threshold=self._occluded_bbox_overlap_threshold,
+        )
+        sample["target_occluded"] = target_occluded
+        sample["target_occlusion"] = occlusion_metadata
+
         mask_visib_path = scene_dir / "mask_visib" / f"{frame_id:06d}_{obj_idx:06d}.png"
         if mask_visib_path.exists():
             sample["mask_image"] = mask_visib_path
@@ -320,7 +429,9 @@ class DTLDDataset:
             f"frame_info_count={frame_info_count} "
             f"frame_info_for_obj={frame_info is not None} "
             f"bbox_visib={bbox_visib!r} valid_visib={is_valid_bbox_xywh(bbox_visib)} "
-            f"bbox_obj={bbox_obj!r} valid_obj={is_valid_bbox_xywh(bbox_obj)}"
+            f"bbox_obj={bbox_obj!r} valid_obj={is_valid_bbox_xywh(bbox_obj)} "
+            f"target_occluded={sample.get('target_occluded')} "
+            f"target_occlusion={sample.get('target_occlusion')!r}"
         )
 
     def _build_annotations(self, sample: Dict[str, object]) -> List[TLGAnnotation]:
@@ -340,11 +451,19 @@ class DTLDDataset:
         liquid_h = sample.get("liquid_h")
         liquid_h_f = float(liquid_h) if isinstance(liquid_h, (int, float)) else None
         obj_idx = _as_int(sample.get("obj_idx"))
+        target_is_usable = not (
+            self._skip_occluded_target_questions and bool(sample.get("target_occluded"))
+        )
+
+        def add_target_task(task: str, answer: object, metadata: Optional[Dict[str, object]] = None) -> None:
+            if not target_is_usable:
+                return
+            task_metadata = dict(metadata or {})
+            task_metadata["target_occluded"] = bool(sample.get("target_occluded"))
+            annotations.append(add(task=task, answer=answer, metadata=task_metadata))
 
         if obj_id_int is not None and obj_id_int in _DTLD_OBJECT_NAMES:
-            annotations.append(
-                add(task="container_type", answer=_DTLD_OBJECT_NAMES[obj_id_int], metadata={"obj_id": obj_id_int})
-            )
+            add_target_task("container_type", _DTLD_OBJECT_NAMES[obj_id_int], {"obj_id": obj_id_int})
 
         container_count = sample.get("container_count")
         if (
@@ -361,15 +480,11 @@ class DTLDDataset:
             )
 
         if liquid_h_f is not None:
-            annotations.append(
-                add(task="fill_height_mm", answer=round(liquid_h_f, 2), metadata={"liquid_h": liquid_h_f})
-            )
-            annotations.append(
-                add(
-                    task="liquid_presence",
-                    answer="YES" if liquid_h_f > 0 else "NO",
-                    metadata={"liquid_h": liquid_h_f},
-                )
+            add_target_task("fill_height_mm", round(liquid_h_f, 2), {"liquid_h": liquid_h_f})
+            add_target_task(
+                "liquid_presence",
+                "YES" if liquid_h_f > 0 else "NO",
+                {"liquid_h": liquid_h_f},
             )
 
         return annotations

@@ -32,6 +32,26 @@ def _write_scene(root: Path, scene_id: str, frame_count: int, object_count: int 
     )
 
 
+def _write_scene_with_info(
+    root: Path,
+    scene_id: str,
+    liquid: dict[str, list[dict[str, object]]],
+    info: dict[str, list[dict[str, object]]],
+) -> None:
+    scene_dir = root / scene_id
+    scene_dir.mkdir()
+    rgb_dir = scene_dir / "rgb"
+    rgb_dir.mkdir()
+    for frame_key in liquid:
+        (rgb_dir / f"{int(frame_key):06d}.png").touch()
+    (scene_dir / "scene_gt_liquid.json").write_text(json.dumps(liquid), encoding="utf-8")
+    (scene_dir / "scene_gt_info.json").write_text(json.dumps(info), encoding="utf-8")
+
+
+def _task_names(sample: dict[str, object]) -> set[str]:
+    return {ann.metadata["task"] for ann in sample["annotations"]}
+
+
 class DTLDBalancingTest(unittest.TestCase):
     def test_shuffle_interleaves_scene_folders_before_repeating(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -117,6 +137,91 @@ class DTLDBalancingTest(unittest.TestCase):
             dataset = DTLDDataset(root, shuffle=True, seed=5)
 
             self.assertEqual(dataset._entries[0], ("000000", 0, 0))
+
+    def test_non_overlapping_low_visibility_target_keeps_object_questions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_scene_with_info(
+                root,
+                "000000",
+                {
+                    "0": [
+                        {"obj_id": 15, "liquid_h": 5.0},
+                        {"obj_id": 16, "liquid_h": 7.0},
+                    ]
+                },
+                {
+                    "0": [
+                        {"bbox_obj": [0, 0, 20, 20], "bbox_visib": [0, 0, 20, 20], "visib_fract": 0.5},
+                        {"bbox_obj": [30, 0, 20, 20], "bbox_visib": [30, 0, 20, 20], "visib_fract": 1.0},
+                    ]
+                },
+            )
+
+            dataset = DTLDDataset(root)
+            low_visibility_sample = dataset[0]
+            visible_sample = dataset[1]
+
+            self.assertFalse(low_visibility_sample["target_occluded"])
+            self.assertIn("container_type", _task_names(low_visibility_sample))
+            self.assertIn("fill_height_mm", _task_names(low_visibility_sample))
+            self.assertIn("liquid_presence", _task_names(low_visibility_sample))
+            self.assertFalse(visible_sample["target_occluded"])
+            self.assertIn("container_type", _task_names(visible_sample))
+            self.assertIn("fill_height_mm", _task_names(visible_sample))
+            self.assertIn("liquid_presence", _task_names(visible_sample))
+
+    def test_overlapping_dtld_boxes_suppress_object_questions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_scene_with_info(
+                root,
+                "000000",
+                {
+                    "0": [
+                        {"obj_id": 15, "liquid_h": 5.0},
+                        {"obj_id": 16, "liquid_h": 7.0},
+                    ]
+                },
+                {
+                    "0": [
+                        {"bbox_obj": [0, 0, 20, 20], "bbox_visib": [0, 0, 20, 20], "visib_fract": 1.0},
+                        {"bbox_obj": [4, 4, 20, 20], "bbox_visib": [4, 4, 20, 20], "visib_fract": 1.0},
+                    ]
+                },
+            )
+
+            dataset = DTLDDataset(root)
+
+            self.assertTrue(dataset[0]["target_occluded"])
+            self.assertTrue(dataset[1]["target_occluded"])
+            self.assertEqual(_task_names(dataset[0]), {"container_count"})
+            self.assertEqual(_task_names(dataset[1]), set())
+
+    def test_occluded_target_filter_can_be_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_scene_with_info(
+                root,
+                "000000",
+                {
+                    "0": [
+                        {"obj_id": 15, "liquid_h": 5.0},
+                        {"obj_id": 16, "liquid_h": 7.0},
+                    ]
+                },
+                {
+                    "0": [
+                        {"bbox_obj": [0, 0, 20, 20], "bbox_visib": [0, 0, 20, 20], "visib_fract": 1.0},
+                        {"bbox_obj": [4, 4, 20, 20], "bbox_visib": [4, 4, 20, 20], "visib_fract": 1.0},
+                    ]
+                },
+            )
+
+            dataset = DTLDDataset(root, skip_occluded_target_questions=False)
+
+            self.assertTrue(dataset[0]["target_occluded"])
+            self.assertIn("container_type", _task_names(dataset[0]))
 
 
 if __name__ == "__main__":
