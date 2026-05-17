@@ -10,7 +10,7 @@ from datasets.glassesinthewild import GlassesInTheWildDataset
 from datasets.labliquidvision import LabLiquidVisionDataset
 from datasets.labpicsv1 import LabPicsV1Dataset
 from datasets.ot2 import OT2Dataset
-from datasets.pouring import PouringChangeDetectionDataset
+from datasets.pouring import PouringFrameOrderingDataset
 from tlg.prompts import PromptBank
 
 
@@ -62,7 +62,7 @@ def build_dataset(
     if dataset_name == "labpicsv1":
         return LabPicsV1Dataset(data_root, split="train", prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "pouring":
-        return PouringChangeDetectionDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
+        return PouringFrameOrderingDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "ot2":
         return OT2Dataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     raise ValueError(f"Unsupported dataset: {dataset_name}")

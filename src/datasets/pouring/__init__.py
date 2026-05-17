@@ -1,6 +1,6 @@
 """Minimal utilities for the Pouring dataset."""
 
 from .dataloader import PouringDataset
-from .change_detection import PouringChangeDetectionDataset
+from .change_detection import PouringChangeDetectionDataset, PouringFrameOrderingDataset
 
-__all__ = ["PouringDataset", "PouringChangeDetectionDataset"]
+__all__ = ["PouringDataset", "PouringFrameOrderingDataset", "PouringChangeDetectionDataset"]

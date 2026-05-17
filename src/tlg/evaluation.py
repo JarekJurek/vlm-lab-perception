@@ -184,6 +184,15 @@ def parse_material_types(text: object) -> Optional[str]:
     return ", ".join(label for label in _MATERIAL_TYPE_CHOICES if label in set(hits))
 
 
+def parse_frame_order_labels(text: object) -> Optional[str]:
+    labels = re.findall(r"\b[A-D]\b", norm_text(text).upper())
+    if len(labels) not in (3, 4):
+        return None
+    if len(set(labels)) != len(labels):
+        return None
+    return ", ".join(labels)
+
+
 def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[object], bool]:
     """Parse model response into (canonical_prediction, is_valid)."""
     task = _task_name(ann)
@@ -194,6 +203,10 @@ def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[o
 
     if task == "material_types_present":
         pred = parse_material_types(response)
+        return pred, pred is not None
+
+    if task == "pouring_frame_ordering":
+        pred = parse_frame_order_labels(response)
         return pred, pred is not None
 
     if ann.choices:
@@ -248,6 +261,11 @@ def labels_equal(task: str, pred: object, gt: object) -> bool:
     if task == "material_types_present":
         pred_c = parse_material_types(pred)
         gt_c = parse_material_types(gt)
+        return pred_c is not None and gt_c is not None and pred_c == gt_c
+
+    if task == "pouring_frame_ordering":
+        pred_c = parse_frame_order_labels(pred)
+        gt_c = parse_frame_order_labels(gt)
         return pred_c is not None and gt_c is not None and pred_c == gt_c
 
     return norm_label(pred) == norm_label(gt)
