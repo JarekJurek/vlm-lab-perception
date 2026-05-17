@@ -93,12 +93,66 @@ class DTLDDataset:
         self._entries = self._build_entries()
 
         if shuffle:
+            self._entries = self._balance_entries_by_scene(self._entries, seed=seed)
+
+    @staticmethod
+    def _balance_entries_by_scene(
+        entries: List[Tuple[str, int, int]],
+        *,
+        seed: Optional[int],
+    ) -> List[Tuple[str, int, int]]:
+        grouped: Dict[str, List[Tuple[str, int, int]]] = {}
+        for entry in entries:
+            grouped.setdefault(entry[0], []).append(entry)
+
+        scene_ids = list(grouped)
+        rng = np.random.default_rng(seed)
+        scene_ids = [scene_ids[i] for i in rng.permutation(len(scene_ids))]
+
+        balanced: List[Tuple[str, int, int]] = []
+        remaining = True
+        round_idx = 0
+        while remaining:
+            remaining = False
+            for scene_id in scene_ids:
+                scene_entries = grouped[scene_id]
+                if round_idx < len(scene_entries):
+                    balanced.append(scene_entries[round_idx])
+                    remaining = True
+            round_idx += 1
+        return balanced
+
+    def balanced_indices_by_scene(
+        self,
+        *,
+        max_samples: int,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
+    ) -> List[int]:
+        grouped: Dict[str, List[int]] = {}
+        for idx, (scene_id, _frame_id, _obj_idx) in enumerate(self._entries):
+            grouped.setdefault(scene_id, []).append(idx)
+
+        scene_ids = list(grouped)
+        if shuffle:
             rng = np.random.default_rng(seed)
-            self._entries = [
-                self._entries[i]
-                for i in rng.permutation(len(self._entries))
-            ]
- 
+            scene_ids = [scene_ids[i] for i in rng.permutation(len(scene_ids))]
+
+        selected: List[int] = []
+        round_idx = 0
+        while len(selected) < max_samples:
+            added = False
+            for scene_id in scene_ids:
+                scene_indices = grouped[scene_id]
+                if round_idx < len(scene_indices):
+                    selected.append(scene_indices[round_idx])
+                    added = True
+                    if len(selected) >= max_samples:
+                        break
+            if not added:
+                break
+            round_idx += 1
+        return selected
 
     def _discover_scene_ids(self) -> List[str]:
         return sorted([p.name for p in self.root.iterdir() if p.is_dir()])
@@ -160,7 +214,7 @@ class DTLDDataset:
                 )
                 continue
             liquid = cast(Dict[str, List[Dict[str, Any]]], scene_data["liquid"])
-            for frame_key, objects in liquid.items():
+            for frame_key, objects in sorted(liquid.items(), key=lambda item: int(item[0])):
                 frame_id = int(frame_key)
                 for obj_idx in range(len(objects)):
                     entries.append((scene_id, frame_id, obj_idx))

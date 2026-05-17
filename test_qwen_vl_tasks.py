@@ -376,6 +376,13 @@ def _select_indices(
     Dataset-specific composition should already be handled by the dataloader.
     """
 
+    if shuffle and dataset_name == "dtld" and hasattr(dataset, "balanced_indices_by_scene"):
+        return dataset.balanced_indices_by_scene(
+            max_samples=min(len(dataset), max_samples),
+            shuffle=True,
+            seed=seed,
+        )
+
     task_groups: Dict[str, List[int]] = {}
     for i in range(len(dataset)):
         try:
