@@ -71,6 +71,7 @@ def print_stats(title: str, stats: Dict[str, TaskStats]) -> None:
         recall = d.get("recall")
         f1 = d.get("f1")
         mean_iou = d.get("mean_iou")
+        pairwise_acc = d.get("pairwise_accuracy")
         parts = [f"n={n}", f"valid={n_valid}"]
         if isinstance(acc, float):
             parts.append(f"acc={acc:.3f}")
@@ -86,4 +87,6 @@ def print_stats(title: str, stats: Dict[str, TaskStats]) -> None:
             parts.append(f"f1={f1:.3f}")
         if isinstance(mean_iou, float):
             parts.append(f"mean_iou={mean_iou:.3f}")
+        if isinstance(pairwise_acc, float):
+            parts.append(f"pairwise_acc={pairwise_acc:.3f}")
         print(f"  - {task}: " + ", ".join(parts))

@@ -184,6 +184,48 @@ def parse_material_types(text: object) -> Optional[str]:
     return ", ".join(label for label in _MATERIAL_TYPE_CHOICES if label in set(hits))
 
 
+def parse_frame_order_labels(text: object) -> Optional[str]:
+    labels = re.findall(r"\b[A-D]\b", norm_text(text).upper())
+    if len(labels) not in (3, 4):
+        return None
+    if len(set(labels)) != len(labels):
+        return None
+    return ", ".join(labels)
+
+
+def _frame_order_label_list(text: object) -> Optional[List[str]]:
+    parsed = parse_frame_order_labels(text)
+    if parsed is None:
+        return None
+    return [label.strip() for label in parsed.split(",")]
+
+
+def _score_frame_ordering_pairwise(pred: object, gt: object) -> Dict[str, object]:
+    pred_labels = _frame_order_label_list(pred)
+    gt_labels = _frame_order_label_list(gt)
+    if pred_labels is None or gt_labels is None:
+        return {}
+
+    pred_pos = {label: i for i, label in enumerate(pred_labels)}
+    total = 0
+    correct = 0
+    for i, earlier in enumerate(gt_labels):
+        for later in gt_labels[i + 1:]:
+            total += 1
+            if (
+                earlier in pred_pos
+                and later in pred_pos
+                and pred_pos[earlier] < pred_pos[later]
+            ):
+                correct += 1
+
+    return {
+        "pairwise_correct": correct,
+        "pairwise_total": total,
+        "pairwise_accuracy": (float(correct) / float(total)) if total > 0 else None,
+    }
+
+
 def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[object], bool]:
     """Parse model response into (canonical_prediction, is_valid)."""
     task = _task_name(ann)
@@ -194,6 +236,10 @@ def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[o
 
     if task == "material_types_present":
         pred = parse_material_types(response)
+        return pred, pred is not None
+
+    if task == "pouring_frame_ordering":
+        pred = parse_frame_order_labels(response)
         return pred, pred is not None
 
     if ann.choices:
@@ -248,6 +294,11 @@ def labels_equal(task: str, pred: object, gt: object) -> bool:
     if task == "material_types_present":
         pred_c = parse_material_types(pred)
         gt_c = parse_material_types(gt)
+        return pred_c is not None and gt_c is not None and pred_c == gt_c
+
+    if task == "pouring_frame_ordering":
+        pred_c = parse_frame_order_labels(pred)
+        gt_c = parse_frame_order_labels(gt)
         return pred_c is not None and gt_c is not None and pred_c == gt_c
 
     return norm_label(pred) == norm_label(gt)
@@ -498,6 +549,8 @@ def score_prediction(
         return record
 
     record["correct"] = labels_equal(task, pred, gt)
+    if task == "pouring_frame_ordering":
+        record.update(_score_frame_ordering_pairwise(pred, gt))
     return record
 
 
@@ -514,6 +567,8 @@ class TaskStats:
     f1_sum: float = 0.0
     mean_iou_sum: float = 0.0
     n_grounding: int = 0
+    pairwise_correct: int = 0
+    pairwise_total: int = 0
 
     def update_from_record(self, rec: Dict[str, object]) -> None:
         self.n += 1
@@ -542,6 +597,12 @@ class TaskStats:
             self.mean_iou_sum += float(mean_iou)
             self.n_grounding += 1
 
+        pairwise_correct = rec.get("pairwise_correct")
+        pairwise_total = rec.get("pairwise_total")
+        if isinstance(pairwise_correct, int) and isinstance(pairwise_total, int):
+            self.pairwise_correct += pairwise_correct
+            self.pairwise_total += pairwise_total
+
     def to_dict(self) -> Dict[str, object]:
         out: Dict[str, object] = {
             "n": int(self.n),
@@ -560,4 +621,8 @@ class TaskStats:
             out["recall"] = self.recall_sum / float(self.n_grounding)
             out["f1"] = self.f1_sum / float(self.n_grounding)
             out["mean_iou"] = self.mean_iou_sum / float(self.n_grounding)
+        if self.pairwise_total > 0:
+            out["pairwise_correct"] = int(self.pairwise_correct)
+            out["pairwise_total"] = int(self.pairwise_total)
+            out["pairwise_accuracy"] = float(self.pairwise_correct) / float(self.pairwise_total)
         return out

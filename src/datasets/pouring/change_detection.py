@@ -1,11 +1,9 @@
-"""
-PouringChangeDetectionDataset and helpers for two-frame change detection on Pouring test split.
-"""
+"""Frame-ordering samples for the Pouring test split."""
 from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Sequence, Union, cast
 
 import numpy as np
 
@@ -14,30 +12,11 @@ from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 from .dataloader import PouringDataset
 
 
-def _label_change(area_a: float, area_b: float, eps: float) -> str:
-    """Label a frame pair based on liquid area change.
-    
-    Returns one of: NO_CHANGE, LIQUID_INCREASED, LIQUID_DECREASED.
-    All valid pairs are labeled; no None filtering.
-    """
-    if area_a == 0 and area_b == 0:
-        # Both empty
-        return "NO_CHANGE"
-    if area_a > 0 and area_b > area_a + eps:
-        # Liquid increased
-        return "LIQUID_INCREASED"
-    if area_a == 0 and area_b > area_a + eps:
-        # Treat liquid appearing from empty as an increase.
-        return "LIQUID_INCREASED"
-    if area_a > 0 and area_b < area_a - eps:
-        # Liquid decreased
-        return "LIQUID_DECREASED"
-    # All other cases (small change, area_b == 0 when area_a > 0 but within eps)
-    return "NO_CHANGE"
+_ORDER_LABELS = ("A", "B", "C", "D")
 
 
-class PouringChangeDetectionDataset:
-    """Pairs of frames for change detection in Pouring test split."""
+class PouringFrameOrderingDataset:
+    """Three- or four-frame ordering tasks for Pouring test videos."""
 
     def __init__(
         self,
@@ -82,77 +61,63 @@ class PouringChangeDetectionDataset:
             )
 
         has_liquid_presence = self.prompt_bank.supports("pouring", "liquid_presence")
-        has_change_detection = self.prompt_bank.supports("pouring", "pouring_change_detection")
+        has_frame_ordering = self.prompt_bank.supports("pouring", "pouring_frame_ordering")
 
         if has_liquid_presence:
             for video_id, frame_infos in sorted(frames_by_video.items()):
                 for frame_info in sorted(frame_infos, key=lambda item: item["frame_index"]):
                     self._append_single_frame_sample(samples, video_id, frame_info)
 
-        if not has_change_detection:
+        if not has_frame_ordering:
             return samples
 
-        pair_samples: List[Dict[str, Any]] = []
         for video_id, frame_infos in sorted(frames_by_video.items()):
             frame_infos = sorted(frame_infos, key=lambda item: item["frame_index"])
-            # Generate both frame orders, including same-frame pairs. The
-            # same-frame pairs provide additional NO_CHANGE examples for the
-            # balanced subset.
-            for i, a in enumerate(frame_infos):
-                for j, b in enumerate(frame_infos):
-                    self._append_pair_sample(pair_samples, video_id, a, b)
-        samples.extend(self._balance_pair_samples(pair_samples))
+            if len(frame_infos) >= 3:
+                self._append_ordering_sample(samples, video_id, frame_infos)
         return samples
 
-    def _balance_pair_samples(self, pair_samples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        by_label: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        for sample in pair_samples:
-            by_label[str(sample["label"])].append(sample)
-
-        if len(by_label) <= 1:
-            return pair_samples
-
-        target_count = min(len(group) for group in by_label.values())
-        rng = np.random.default_rng(self._seed)
-        balanced: List[Dict[str, Any]] = []
-        for label in sorted(by_label):
-            group = by_label[label]
-            if len(group) > target_count:
-                chosen = sorted(rng.choice(len(group), size=target_count, replace=False).tolist())
-                balanced.extend(group[i] for i in chosen)
-            else:
-                balanced.extend(group)
-        return balanced
-
-    def _append_pair_sample(
+    def _append_ordering_sample(
         self,
         samples: List[Dict[str, Any]],
         video_id: str,
-        a: Dict[str, Any],
-        b: Dict[str, Any],
+        frame_infos: Sequence[Dict[str, Any]],
     ) -> None:
-        eps = max(20.0, 0.01 * a["area"])
-        label = _label_change(a["area"], b["area"], eps)
+        frame_count = 4 if len(frame_infos) >= 4 else 3
+        chosen_indices = np.linspace(0, len(frame_infos) - 1, num=frame_count, dtype=int).tolist()
+        chronological_frames = [frame_infos[i] for i in chosen_indices]
 
-        sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}__rgb_{b['frame_index']}"
+        rng = np.random.default_rng(_stable_seed(self._seed, video_id))
+        display_order = rng.permutation(frame_count).tolist()
+        if display_order == list(range(frame_count)):
+            display_order = list(reversed(display_order))
 
-        annotations = [self._build_change_annotation(sample_id, a, b, label)]
+        display_frames = [chronological_frames[i] for i in display_order]
+        display_labels = list(_ORDER_LABELS[:frame_count])
+        chronological_positions = [display_order.index(i) for i in range(frame_count)]
+        answer_labels = [display_labels[i] for i in chronological_positions]
+        answer = ", ".join(answer_labels)
+
+        chronological_stems = "__".join(f"rgb_{f['frame_index']}" for f in chronological_frames)
+        display_stems = "__".join(f"{label}_rgb_{frame['frame_index']}" for label, frame in zip(display_labels, display_frames))
+        sample_id = f"{self.split}/{video_id}/order_{chronological_stems}/display_{display_stems}"
+
+        annotations = [self._build_ordering_annotation(sample_id, chronological_frames, display_frames, answer)]
 
         samples.append(
             {
                 "id": sample_id,
-                "primary_task": "pouring_change_detection",
+                "primary_task": "pouring_frame_ordering",
                 "split": self.split,
                 "video_id": video_id,
-                "frame_a_index": a["frame_index"],
-                "frame_a_path": str(a["img_path"]),
-                "rgb_image": a["img_path"],
-                "area_a": a["area"],
-                "frame_b_index": b["frame_index"],
-                "frame_b_path": str(b["img_path"]),
-                "comparison_rgb_image": b["img_path"],
-                "area_b": b["area"],
-                "label": label,
+                "frame_count": frame_count,
+                "rgb_image": display_frames[0]["img_path"],
+                "ordered_rgb_images": [frame["img_path"] for frame in display_frames],
+                "ordered_image_labels": display_labels,
+                "display_frame_indices": [frame["frame_index"] for frame in display_frames],
+                "chronological_frame_indices": [frame["frame_index"] for frame in chronological_frames],
+                "answer_order_labels": answer_labels,
+                "label": answer,
                 "annotations": annotations,
             }
         )
@@ -199,18 +164,23 @@ class PouringChangeDetectionDataset:
             },
         )
 
-    def _build_change_annotation(self, sample_id: str, a: dict, b: dict, label: str) -> TLGAnnotation:
+    def _build_ordering_annotation(
+        self,
+        sample_id: str,
+        chronological_frames: Sequence[dict],
+        display_frames: Sequence[dict],
+        answer: str,
+    ) -> TLGAnnotation:
         return make_tlg_annotation(
             self.prompt_bank,
             dataset="pouring",
-            task="pouring_change_detection",
+            task="pouring_frame_ordering",
             image_id=sample_id,
-            answer=label,
+            answer=answer,
             metadata={
-                "frame_a_index": a["frame_index"],
-                "frame_b_index": b["frame_index"],
-                "area_a": a["area"],
-                "area_b": b["area"],
+                "display_labels": list(_ORDER_LABELS[: len(display_frames)]),
+                "display_frame_indices": [frame["frame_index"] for frame in display_frames],
+                "chronological_frame_indices": [frame["frame_index"] for frame in chronological_frames],
             },
         )
 
@@ -223,3 +193,13 @@ class PouringChangeDetectionDataset:
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
+
+
+def _stable_seed(seed: Optional[int], video_id: str) -> int:
+    base = 0 if seed is None else int(seed)
+    for char in video_id:
+        base = (base * 33 + ord(char)) % (2**32)
+    return base
+
+
+PouringChangeDetectionDataset = PouringFrameOrderingDataset

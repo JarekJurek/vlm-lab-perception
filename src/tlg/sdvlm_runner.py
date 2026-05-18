@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -220,6 +220,32 @@ def make_side_by_side_image(left_image: Any, right_image: Any) -> Any:
     out = Image.new("RGB", (left.width + right.width, target_height), color=(255, 255, 255))
     out.paste(left, (0, 0))
     out.paste(right, (left.width, 0))
+    return out
+
+
+def make_labeled_image_strip(images: Sequence[Any], labels: Sequence[object]) -> Any:
+    """Combine ordered-task frames into one labeled horizontal strip."""
+
+    from PIL import Image, ImageDraw
+
+    rgb_images = [image.convert("RGB") for image in images]
+    target_height = max(image.height for image in rgb_images)
+    label_band = 28
+
+    def _resize_to_height(img: Any) -> Any:
+        if img.height == target_height:
+            return img
+        new_width = max(1, round(img.width * target_height / img.height))
+        return img.resize((new_width, target_height))
+
+    resized = [_resize_to_height(image) for image in rgb_images]
+    out = Image.new("RGB", (sum(image.width for image in resized), target_height + label_band), color=(255, 255, 255))
+    draw = ImageDraw.Draw(out)
+    x = 0
+    for image, label in zip(resized, labels):
+        out.paste(image, (x, label_band))
+        draw.text((x + 8, 7), str(label), fill=(0, 0, 0))
+        x += image.width
     return out
 
 
@@ -425,6 +451,14 @@ def test_sample_sdvlm(
     if comparison_path is not None:
         comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
 
+    ordered_images = None
+    ordered_paths = sample.get("ordered_rgb_images")
+    if isinstance(ordered_paths, (list, tuple)) and ordered_paths:
+        ordered_images = [
+            _open_rgb_image(path, label=f"ordered RGB image {i + 1}")
+            for i, path in enumerate(ordered_paths)
+        ]
+
     target_box_image = None
     bbox = sample.get("bbox_visib") or sample.get("bbox_obj")
     if is_valid_bbox_xywh(bbox):
@@ -485,6 +519,18 @@ def test_sample_sdvlm(
                 "The input image is a side-by-side comparison. "
                 "The left panel is the first frame. "
                 "The right panel is the second frame.\n\n"
+                f"{prompt}"
+            )
+        if ordered_images is not None and len(ordered_images) >= 2:
+            labels = sample.get("ordered_image_labels")
+            if not isinstance(labels, (list, tuple)) or len(labels) != len(ordered_images):
+                labels = [chr(ord("A") + i) for i in range(len(ordered_images))]
+            task_image = make_labeled_image_strip(ordered_images, labels)
+            prompt = (
+                "The input image is a horizontal strip of frames. "
+                "The frames are provided from left to right with labels: "
+                f"{', '.join(str(label) for label in labels)}. "
+                "Use these labels in your answer.\n\n"
                 f"{prompt}"
             )
 

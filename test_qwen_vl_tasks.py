@@ -349,6 +349,9 @@ def _record_results(
             if "within_tol" in rec:
                 row["within_tol"] = rec["within_tol"]
             for key in (
+                "pairwise_correct",
+                "pairwise_total",
+                "pairwise_accuracy",
                 "n_gt_boxes",
                 "n_pred_boxes",
                 "n_matched_boxes",

@@ -246,6 +246,14 @@ def test_sample(
     if comparison_path is not None:
         comparison_image = _open_rgb_image(comparison_path, label="comparison RGB image")
 
+    ordered_images = None
+    ordered_paths = sample.get("ordered_rgb_images")
+    if isinstance(ordered_paths, (list, tuple)) and ordered_paths:
+        ordered_images = [
+            _open_rgb_image(path, label=f"ordered RGB image {i + 1}")
+            for i, path in enumerate(ordered_paths)
+        ]
+
     target_box_image = None
     bbox = sample.get("bbox_visib") or sample.get("bbox_obj")
     if is_valid_bbox_xywh(bbox):
@@ -296,6 +304,18 @@ def test_sample(
                 f"{prompt}"
             )
             extra_images = [comparison_image]
+        if ordered_images is not None and len(ordered_images) >= 2:
+            labels = sample.get("ordered_image_labels")
+            if not isinstance(labels, (list, tuple)) or len(labels) != len(ordered_images):
+                labels = [chr(ord("A") + i) for i in range(len(ordered_images))]
+            prompt = (
+                "The images are provided in this label order: "
+                f"{', '.join(str(label) for label in labels)}. "
+                "Use these labels in your answer.\n\n"
+                f"{prompt}"
+            )
+            task_image = ordered_images[0]
+            extra_images = ordered_images[1:]
 
         response = run_task(
             model,

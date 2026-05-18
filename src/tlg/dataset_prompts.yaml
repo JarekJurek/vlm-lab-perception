@@ -38,4 +38,4 @@ ot2:
 
 pouring:
   - liquid_presence
-  - pouring_change_detection
+  - pouring_frame_ordering

@@ -65,7 +65,6 @@ multiphase_material_presence:
   question: "Does the image contain a multi-phase material? Answer with only 'YES' or 'NO'."
   choices: ["YES", "NO"]
 
-pouring_change_detection:
-  task_type: "Liquid Change Detection (pairwise)"
-  question: "Compare the first image to the second image. How did the amount of visible liquid change from the first image to the second image? Answer with only one of: NO_CHANGE, LIQUID_INCREASED, LIQUID_DECREASED."
-  choices: ["NO_CHANGE", "LIQUID_INCREASED", "LIQUID_DECREASED"]
+pouring_frame_ordering:
+  task_type: "Water Pouring Frame Ordering"
+  question: "The images are frames from the same water-pouring video, shown out of chronological order and labeled A, B, C, and optionally D. Put the frames in the order that creates a logical water-pouring sequence. Answer with only the image labels separated by commas, such as A, C, B."
