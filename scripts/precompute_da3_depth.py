@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Precompute DepthAnything 3 cache entries for SD-VLM task images."""
+"""Precompute DepthAnything 3 depth maps for original dataset RGB images."""
 
 from __future__ import annotations
 
@@ -8,8 +8,10 @@ import json
 import random
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
+import numpy as np
+from PIL import Image, UnidentifiedImageError
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -19,7 +21,6 @@ from tlg.reporting import validate_annotations
 from tlg.sdvlm_runner import (
     DA3_MODEL_NAME,
     DepthAnything3Provider,
-    build_sdvlm_task_inputs,
 )
 
 
@@ -39,9 +40,10 @@ def main() -> None:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_fh = manifest_path.open("w", encoding="utf-8")
 
-    total_tasks = 0
+    total_images = 0
     total_hits = 0
     total_misses = 0
+    seen_depth_paths: Set[Path] = set()
     try:
         for dataset_name in args.datasets:
             data_root = data_root_overrides.get(dataset_name, DATA_ROOTS[dataset_name])
@@ -83,49 +85,52 @@ def main() -> None:
                     print(f"[{idx}/{len(indices)}] {sample_id}: invalid annotations: {err}")
                     continue
 
-                task_inputs = build_sdvlm_task_inputs(
-                    sample,
-                    annotations,
-                    dataset_name=dataset_name,
-                    sample_id=sample_id,
-                    debug_dtld_boxes=bool(args.debug_dtld_boxes),
-                    debug_image_out_dir=Path(args.debug_image_out) if args.debug_image_out else None,
-                )
-                print(f"[{idx}/{len(indices)}] {sample_id}: {len(task_inputs)} task images")
+                depth_path = _depth_output_path(Path(args.da3_cache_dir), dataset_name, sample)
+                if depth_path in seen_depth_paths:
+                    print(f"[{idx}/{len(indices)}] {sample_id}: duplicate RGB frame; already queued.")
+                    continue
+                seen_depth_paths.add(depth_path)
+                image = _load_original_rgb_image(sample)
+                depth_path.parent.mkdir(parents=True, exist_ok=True)
 
-                for task_input in task_inputs:
-                    _, meta = provider.get_depth_image(
-                        image=task_input.image,
-                        sample=sample,
-                        sample_id=sample_id,
-                        task_name=task_input.task_name,
-                    )
-                    total_tasks += 1
-                    status = str(meta.get("sdvlm_depth_cache_status", ""))
-                    if status == "hit":
-                        total_hits += 1
-                    elif status == "miss":
-                        total_misses += 1
-                    if manifest_fh is not None:
-                        row = {
-                            "dataset": dataset_name,
-                            "sample_id": sample_id,
-                            "task": task_input.task_name,
-                            **meta,
-                        }
-                        manifest_fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+                if depth_path.exists():
+                    depth = np.load(depth_path)
+                    status = "hit"
+                else:
+                    depth = provider._infer_depth(image)
+                    np.save(depth_path, depth.astype(np.float32, copy=False))
+                    status = "miss"
+
+                total_images += 1
+                if status == "hit":
+                    total_hits += 1
+                else:
+                    total_misses += 1
+                print(f"[{idx}/{len(indices)}] {sample_id}: DA3 depth cache {status}: {depth_path}")
+
+                if manifest_fh is not None:
+                    row = {
+                        "dataset": dataset_name,
+                        "sample_id": sample_id,
+                        "image_path": str(sample.get("rgb_image", "")),
+                        "depth_path": str(depth_path),
+                        "depth_shape": list(np.asarray(depth).shape),
+                        "cache_status": status,
+                        "da3_model_path": str(args.da3_model_path),
+                    }
+                    manifest_fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     finally:
         if manifest_fh is not None:
             manifest_fh.close()
 
     print("\nDone.")
-    print(f"Task images processed: {total_tasks}")
+    print(f"Original RGB images processed: {total_images}")
     print(f"DA3 cache misses: {total_misses}")
     print(f"DA3 cache hits: {total_hits}")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Precompute DepthAnything 3 depth cache for SD-VLM inputs.")
+    parser = argparse.ArgumentParser(description="Precompute DepthAnything 3 depth maps for original RGB images.")
     parser.add_argument(
         "--datasets",
         nargs="+",
@@ -167,6 +172,41 @@ def _parse_data_root_overrides(items: List[str]) -> Dict[str, Path]:
         dataset, path = raw.split("=", 1)
         out[dataset.strip()] = Path(path.strip())
     return out
+
+
+def _load_original_rgb_image(sample: Dict[str, Any]) -> Image.Image:
+    rgb_path = sample.get("rgb_image")
+    if rgb_path is not None:
+        try:
+            return Image.open(rgb_path).convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
+            raise OSError(f"Failed to open RGB image: {rgb_path} ({exc})") from exc
+
+    rgb_array = sample.get("rgb")
+    if rgb_array is None:
+        raise FileNotFoundError("Sample has neither 'rgb_image' nor 'rgb'.")
+    arr = np.asarray(rgb_array)
+    if arr.ndim == 3 and arr.shape[0] in (1, 3, 4):
+        arr = arr.transpose(1, 2, 0)
+    return Image.fromarray(arr.astype("uint8")).convert("RGB")
+
+
+def _depth_output_path(cache_dir: Path, dataset_name: str, sample: Dict[str, Any]) -> Path:
+    if dataset_name == "dtld":
+        scene_id = str(sample.get("scene_id", "unknown"))
+        frame_id = sample.get("frame_id", "unknown")
+        if isinstance(frame_id, int):
+            frame_name = f"{frame_id:06d}"
+        else:
+            frame_name = _safe_path_part(str(frame_id))
+        return cache_dir / dataset_name / _safe_path_part(scene_id) / f"{frame_name}.npy"
+
+    sample_id = _safe_path_part(str(sample.get("id", "unknown")))
+    return cache_dir / dataset_name / f"{sample_id}.npy"
+
+
+def _safe_path_part(value: str) -> str:
+    return value.replace("/", "__").replace("\\", "__")
 
 
 def _select_indices(
