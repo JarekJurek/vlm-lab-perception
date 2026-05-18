@@ -8,7 +8,7 @@ The repo adds `src/` to `PYTHONPATH` in examples, so this package can be
 imported as `import tlg`.
 """
 
-from .annotations import TLGAnnotation, make_tlg_annotation
+from .annotations import TLGAnnotation, make_tlg_annotation, simplify_container_type
 from .prompts import PromptBank
 
-__all__ = ["TLGAnnotation", "make_tlg_annotation", "PromptBank"]
+__all__ = ["TLGAnnotation", "make_tlg_annotation", "simplify_container_type", "PromptBank"]

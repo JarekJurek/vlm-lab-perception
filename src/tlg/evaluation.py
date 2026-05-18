@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .annotations import TLGAnnotation
+from .annotations import simplify_container_type
 
 
 _NUM_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
@@ -149,6 +150,39 @@ def canonicalize_container_type(s: object) -> Optional[str]:
     return t
 
 
+def canonicalize_container_type_simple(s: object) -> Optional[str]:
+    t = norm_text(s)
+    if not t:
+        return None
+
+    canonical_full = canonicalize_container_type(t)
+    simple = simplify_container_type(canonical_full)
+    if simple != canonical_full:
+        return simple
+
+    compact = _compact_alnum(t)
+    aliases = {
+        "tube": "Tube",
+        "pyrex": "Pyrex",
+        "storagebottle": "StorageBottle",
+        "storage": "StorageBottle",
+        "bottle": "StorageBottle",
+        "duran": "Duran",
+        "cellflask": "Flask",
+        "cellcultureflask": "Flask",
+        "flask": "Flask",
+        "gibco": "Gibco",
+        "t25flask": "Flask",
+        "t75flask": "Flask",
+        "t175flask": "Flask",
+        "grex": "G-rex",
+        "grexflask": "G-rex",
+        "tip": "Tip",
+        "pipettetip": "Tip",
+    }
+    return aliases.get(compact, t)
+
+
 def _task_name(ann: TLGAnnotation) -> str:
     return str(ann.metadata.get("task", ann.task_type))
 
@@ -248,6 +282,10 @@ def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[o
             pred = canonicalize_container_type(response)
             if pred not in set(str(c) for c in ann.choices):
                 pred = None
+        if pred is None and task == "container_type_simple":
+            pred = canonicalize_container_type_simple(response)
+            if pred not in set(str(c) for c in ann.choices):
+                pred = None
         return pred, pred is not None
 
     if task in _YES_NO_TASKS:
@@ -272,6 +310,10 @@ def parse_task_prediction(ann: TLGAnnotation, response: str) -> Tuple[Optional[o
         pred = canonicalize_container_type(response) or norm_text(response)
         return pred, bool(pred)
 
+    if task == "container_type_simple":
+        pred = canonicalize_container_type_simple(response) or norm_text(response)
+        return pred, bool(pred)
+
     pred = norm_text(response)
     return pred, bool(pred)
 
@@ -287,6 +329,13 @@ def labels_equal(task: str, pred: object, gt: object) -> bool:
     if task == "container_type":
         pred_c = canonicalize_container_type(pred)
         gt_c = canonicalize_container_type(gt)
+        if pred_c is not None and gt_c is not None:
+            return _compact_alnum(pred_c) == _compact_alnum(gt_c)
+        return norm_label(pred) == norm_label(gt)
+
+    if task == "container_type_simple":
+        pred_c = canonicalize_container_type_simple(pred)
+        gt_c = canonicalize_container_type_simple(gt)
         if pred_c is not None and gt_c is not None:
             return _compact_alnum(pred_c) == _compact_alnum(gt_c)
         return norm_label(pred) == norm_label(gt)

@@ -10,6 +10,27 @@ JsonPrimitive = Union[str, int, float, bool, None]
 JsonValue = Union[JsonPrimitive, List["JsonValue"], Dict[str, "JsonValue"]]
 
 
+_CONTAINER_TYPE_SIMPLE_MAP = {
+    "Tube_50mL": "Tube",
+    "Tube_15mL": "Tube",
+    "Pyrex_100mL": "Pyrex",
+    "StorageBottle_250mL": "StorageBottle",
+    "StorageBottle_500mL": "StorageBottle",
+    "Duran_500mL": "Duran",
+    "Duran_250mL": "Duran",
+    "Duran_100mL": "Duran",
+    "Cell_Flask_160mL": "Flask",
+    "Cell_Flask_400mL": "Flask",
+    "Gibco_125mL": "Gibco",
+    "Gibco_500mL": "Gibco",
+    "T25 Flask": "Flask",
+    "T75 Flask": "Flask",
+    "T175 Flask": "Flask",
+    "G-rex": "G-rex",
+    "Tip": "Tip",
+}
+
+
 _DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
 
 
@@ -76,6 +97,13 @@ def make_tlg_annotation(
         answer=answer,
         metadata=md,
     )
+
+
+def simplify_container_type(container_type: object) -> str:
+    """Return the no-volume container type label for the easier type task."""
+
+    label = str(container_type).strip()
+    return _CONTAINER_TYPE_SIMPLE_MAP.get(label, label)
 
 
 def discretize_fill_level_ordinal(fill_percentage: float) -> str:
