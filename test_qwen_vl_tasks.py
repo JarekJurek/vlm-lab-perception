@@ -27,6 +27,8 @@ from tlg.dataset_factory import DATA_ROOTS, build_dataset
 from tlg.evaluation import TaskStats, score_prediction
 from tlg.model_runner import MAX_NEW_TOKENS, MODEL_NAME, load_model, test_sample
 from tlg.sdvlm_runner import (
+    MAX_NEW_TOKENS as SDVLM_MAX_NEW_TOKENS,
+    build_sdvlm_depth_provider,
     load_sdvlm_model,
     test_sample_sdvlm,
 )
@@ -46,9 +48,12 @@ def main():
     run_qwen = model_choice in ("qwen", "both")
     run_sdvlm = model_choice in ("sdvlm", "both")
 
-    # SD-VLM needs depth arrays in the sample when --sdvlm-gt-depth is set.
-    use_gt_depth = bool(args.sdvlm_gt_depth)
-    include_depth = run_sdvlm and use_gt_depth
+    sdvlm_depth_source = _normalize_sdvlm_depth_source(args)
+    use_gt_depth = sdvlm_depth_source in ("dataset", "da3")
+    include_depth = run_sdvlm and sdvlm_depth_source == "dataset"
+    da3_cache_dir = _resolve_da3_cache_dir(args) if sdvlm_depth_source == "da3" else None
+    if run_sdvlm and args.sdvlm_no_depth and sdvlm_depth_source != "internal":
+        raise ValueError("--sdvlm-no-depth cannot be combined with an external SD-VLM depth source.")
 
     if args.dry_run:
         print("Dry run: validating dataset loading + standardized annotations (no model).")
@@ -70,6 +75,7 @@ def main():
     # --- Load models ---
     model = processor = None
     sdvlm_model = sdvlm_tokenizer = sdvlm_image_processor = None
+    sdvlm_depth_provider = None
 
     if not args.dry_run:
         if run_qwen:
@@ -81,6 +87,12 @@ def main():
                 use_depth=not args.sdvlm_no_depth,
                 gt_depth=use_gt_depth,
                 viz_attn=viz_attn,
+            )
+            sdvlm_depth_provider = build_sdvlm_depth_provider(
+                sdvlm_depth_source,
+                da3_model_path=str(args.da3_model_path),
+                da3_cache_dir=da3_cache_dir,
+                da3_device=str(args.da3_device),
             )
 
     pred_out_path = Path(args.predictions_out) if args.predictions_out else None
@@ -221,6 +233,7 @@ def main():
 
             # --- SD-VLM inference ---
             if run_sdvlm:
+                sdvlm_depth_metadata: Dict[str, Dict[str, Any]] = {}
                 try:
                     sdvlm_results = test_sample_sdvlm(
                         sdvlm_model,
@@ -235,6 +248,8 @@ def main():
                         viz_attn_mode=str(args.viz_attn_mode),
                         debug_dtld_boxes=debug_dtld_boxes,
                         debug_image_out_dir=debug_image_out_dir,
+                        depth_provider=sdvlm_depth_provider,
+                        depth_metadata=sdvlm_depth_metadata,
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
                     print(f"[SD-VLM] Failed to load images for sample index={idx0}: {e}")
@@ -250,6 +265,7 @@ def main():
                     overall_stats=overall_stats,
                     per_dataset_stats=per_dataset_stats,
                     pred_fh=pred_fh,
+                    extra_metadata=sdvlm_depth_metadata,
                 )
 
                 print("\n[SD-VLM] Predictions:")
@@ -289,9 +305,12 @@ def main():
         if run_sdvlm:
             payload["sdvlm"] = {
                 "model_name": args.sdvlm_model_path,
-                "max_new_tokens": int(MAX_NEW_TOKENS),
+                "max_new_tokens": int(SDVLM_MAX_NEW_TOKENS),
                 "use_depth": not args.sdvlm_no_depth,
                 "gt_depth": use_gt_depth,
+                "depth_source": sdvlm_depth_source,
+                "da3_model_path": str(args.da3_model_path) if sdvlm_depth_source == "da3" else None,
+                "da3_cache_dir": str(da3_cache_dir) if da3_cache_dir is not None else None,
                 "overall": {k: v.to_dict() for k, v in overall_stats["sdvlm"].items()},
                 "per_dataset": {
                     ds: {k: v.to_dict() for k, v in stats.items()}
@@ -314,6 +333,7 @@ def _record_results(
     overall_stats: Dict[str, Dict[str, TaskStats]],
     per_dataset_stats: Dict[str, Dict[str, Dict[str, TaskStats]]],
     pred_fh,
+    extra_metadata: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> None:
     """Update stats and write JSONL records for a single sample's results."""
     ds_stats = per_dataset_stats[model_key].setdefault(dataset_name, {})
@@ -348,6 +368,8 @@ def _record_results(
                 row["abs_error"] = rec["abs_error"]
             if "within_tol" in rec:
                 row["within_tol"] = rec["within_tol"]
+            if extra_metadata is not None:
+                row.update(extra_metadata.get(task, {}))
             for key in (
                 "pairwise_correct",
                 "pairwise_total",
@@ -364,6 +386,24 @@ def _record_results(
                 if key in rec:
                     row[key] = rec[key]
             pred_fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _normalize_sdvlm_depth_source(args) -> str:
+    depth_source = str(args.sdvlm_depth_source)
+    if bool(args.sdvlm_gt_depth):
+        if depth_source != "internal":
+            raise ValueError("--sdvlm-gt-depth cannot be combined with --sdvlm-depth-source.")
+        depth_source = "dataset"
+    return depth_source
+
+
+def _resolve_da3_cache_dir(args) -> Path:
+    if args.da3_cache_dir:
+        return Path(args.da3_cache_dir)
+    for raw_path in (args.predictions_out, args.metrics_out, args.viz_out):
+        if raw_path:
+            return Path(raw_path).parent / "da3_depth_cache"
+    return Path("bakery") / "da3_depth_cache"
 
 
 def _select_indices(

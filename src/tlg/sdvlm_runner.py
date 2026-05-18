@@ -23,9 +23,10 @@ are set on the model object after loading:
 * ``model.gt_depth = True`` — a ground-truth depth image is passed directly via
   ``ori_imgs``; ``ori_imgs`` should contain the depth as a PIL Image.
 
-LabLiquidVision provides ``Input_DepthMap.npy`` for every sample, so GT depth
-is usable via ``--sdvlm-gt-depth``.  All other datasets fall back to the
-internally estimated depth.
+LabLiquidVision provides ``Input_DepthMap.npy`` for every sample, so dataset
+GT depth is usable via ``--sdvlm-depth-source dataset`` or the legacy
+``--sdvlm-gt-depth`` flag.  ``--sdvlm-depth-source da3`` uses DepthAnything 3
+to generate external depth and passes it through the same GT-depth path.
 
 Attention visualization
 -----------------------
@@ -39,6 +40,8 @@ materialised.  The visualization logic lives in
 from __future__ import annotations
 
 import copy
+import hashlib
+import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -53,10 +56,203 @@ from tlg.target_overlay import is_valid_bbox_xywh, make_target_box_overlay, shou
 
 SDVLM_MODEL_NAME = "cpystan/SD-VLM-7B"
 SDVLM_VISION_TOWER = "openai/clip-vit-large-patch14-336"
+DA3_MODEL_NAME = "depth-anything/DA3METRIC-LARGE"
 MAX_NEW_TOKENS = 256
 
 # Channel counts for (C, H, W) shaped arrays (grayscale, RGB, RGBA).
 _LEADING_CHANNEL_COUNTS = (1, 3, 4)
+
+
+class SDVLMDepthProvider:
+    """Resolve the external depth image used by SD-VLM for a task image."""
+
+    source = "internal"
+    da3_model_path: Optional[str] = None
+
+    def get_depth_image(
+        self,
+        *,
+        image: Any,
+        sample: Dict[str, Any],
+        sample_id: str,
+        task_name: str,
+    ) -> Tuple[Optional[Any], Dict[str, Any]]:
+        return None, {
+            "sdvlm_depth_source": self.source,
+            "sdvlm_depth_cache_status": "none",
+        }
+
+
+class DatasetDepthProvider(SDVLMDepthProvider):
+    """Use dataset-provided depth arrays through SD-VLM's GT-depth path."""
+
+    source = "dataset"
+
+    def get_depth_image(
+        self,
+        *,
+        image: Any,
+        sample: Dict[str, Any],
+        sample_id: str,
+        task_name: str,
+    ) -> Tuple[Optional[Any], Dict[str, Any]]:
+        depth_array = sample.get("depth_map")
+        if depth_array is None:
+            print(
+                f"  [SD-VLM] depth_source=dataset but no 'depth_map' found in sample "
+                f"'{sample_id}'; falling back to RGB-based depth estimation."
+            )
+            return None, {
+                "sdvlm_depth_source": self.source,
+                "sdvlm_depth_cache_status": "missing",
+            }
+        return depth_array_to_pil(depth_array), {
+            "sdvlm_depth_source": self.source,
+            "sdvlm_depth_cache_status": "dataset",
+        }
+
+
+class DepthAnything3Provider(SDVLMDepthProvider):
+    """Generate and cache DepthAnything 3 maps for the exact SD-VLM input image."""
+
+    source = "da3"
+
+    def __init__(
+        self,
+        *,
+        model_path: str = DA3_MODEL_NAME,
+        cache_dir: Path,
+        device: str = "cuda",
+    ) -> None:
+        self.da3_model_path = str(model_path)
+        self.cache_dir = Path(cache_dir)
+        self.device = str(device)
+        self._model: Optional[Any] = None
+
+    def get_depth_image(
+        self,
+        *,
+        image: Any,
+        sample: Dict[str, Any],
+        sample_id: str,
+        task_name: str,
+    ) -> Tuple[Any, Dict[str, Any]]:
+        cache_key = self._cache_key(image)
+        cache_path = self.cache_dir / f"{cache_key}.npy"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if cache_path.exists():
+            depth = np.load(cache_path)
+            cache_status = "hit"
+        else:
+            depth = self._infer_depth(image)
+            np.save(cache_path, depth.astype(np.float32, copy=False))
+            cache_status = "miss"
+
+        print(f"    [SD-VLM] DA3 depth cache {cache_status}: {cache_path.name}")
+        return depth_array_to_pil(depth), {
+            "sdvlm_depth_source": self.source,
+            "sdvlm_depth_cache_status": cache_status,
+            "sdvlm_depth_cache_path": str(cache_path),
+            "da3_model_path": self.da3_model_path,
+        }
+
+    def _cache_key(self, image: Any) -> str:
+        payload = {
+            "provider": "depth-anything-3",
+            "model_path": self.da3_model_path,
+            "device": self.device,
+            "input_format": "png-rgb",
+        }
+        h = hashlib.sha256(repr(sorted(payload.items())).encode("utf-8"))
+        with io.BytesIO() as buf:
+            image.convert("RGB").save(buf, format="PNG")
+            h.update(buf.getvalue())
+        return h.hexdigest()
+
+    def _load_model(self) -> Any:
+        if self._model is not None:
+            return self._model
+        try:
+            from depth_anything_3.api import DepthAnything3
+        except ImportError as exc:
+            raise ImportError(
+                "DepthAnything 3 is required for --sdvlm-depth-source da3.\n"
+                "Install it from the official repository:\n"
+                "    git clone https://github.com/ByteDance-Seed/depth-anything-3.git\n"
+                "    cd depth-anything-3 && pip install -e ."
+            ) from exc
+
+        model = DepthAnything3.from_pretrained(self.da3_model_path)
+        if hasattr(model, "to"):
+            model = model.to(self.device)
+        if hasattr(model, "eval"):
+            model = model.eval()
+        self._model = model
+        return model
+
+    def _infer_depth(self, image: Any) -> np.ndarray:
+        model = self._load_model()
+        rgb = image.convert("RGB")
+        try:
+            import torch
+        except ImportError:
+            torch = None
+
+        if torch is None:
+            prediction = model.inference([rgb])
+        else:
+            with torch.inference_mode():
+                prediction = model.inference([rgb])
+        depth = _extract_da3_depth(prediction)
+        return np.asarray(depth, dtype=np.float32)
+
+
+def _extract_da3_depth(prediction: Any) -> np.ndarray:
+    """Extract the first depth map from supported DepthAnything 3 outputs."""
+
+    if isinstance(prediction, (list, tuple)) and prediction:
+        prediction = prediction[0]
+
+    if isinstance(prediction, dict):
+        depth = prediction.get("depth")
+    else:
+        depth = getattr(prediction, "depth", None)
+    if depth is None:
+        raise RuntimeError("DepthAnything 3 prediction did not contain a 'depth' field.")
+
+    if hasattr(depth, "detach") and hasattr(depth, "cpu"):
+        depth = depth.detach().cpu().numpy()
+    arr = np.asarray(depth, dtype=np.float32)
+    if arr.ndim == 3:
+        arr = arr[0]
+    if arr.ndim != 2:
+        raise RuntimeError(f"DepthAnything 3 depth must be HxW or NxHxW, got shape={arr.shape}.")
+    return arr
+
+
+def build_sdvlm_depth_provider(
+    depth_source: str,
+    *,
+    da3_model_path: str = DA3_MODEL_NAME,
+    da3_cache_dir: Optional[Path] = None,
+    da3_device: str = "cuda",
+) -> SDVLMDepthProvider:
+    """Build the depth provider used by SD-VLM inference."""
+
+    if depth_source == "internal":
+        return SDVLMDepthProvider()
+    if depth_source == "dataset":
+        return DatasetDepthProvider()
+    if depth_source == "da3":
+        if da3_cache_dir is None:
+            raise ValueError("da3_cache_dir is required when depth_source='da3'.")
+        return DepthAnything3Provider(
+            model_path=da3_model_path,
+            cache_dir=da3_cache_dir,
+            device=da3_device,
+        )
+    raise ValueError(f"Unsupported SD-VLM depth source: {depth_source!r}")
 
 
 def _require_llava() -> None:
@@ -263,6 +459,7 @@ def run_task_sdvlm(
     viz_attn: bool = False,
     viz_out_dir: Optional[Path] = None,
     viz_attn_mode: str = "all",
+    strict_gt_depth: bool = False,
 ) -> str:
     """Run a single VLM task with SD-VLM.
 
@@ -281,6 +478,8 @@ def run_task_sdvlm(
         viz_out_dir: Output directory for attention visualizations.
         viz_attn_mode: Which generated tokens to use for visualization –
             ``"all"`` or ``"first_answer_token"``.
+        strict_gt_depth: Raise instead of falling back to internal RGB depth
+            when ``model.gt_depth`` is set but no depth image is supplied.
 
     Returns:
         Model's text response.
@@ -315,6 +514,8 @@ def run_task_sdvlm(
     # estimator for this call instead of leaving the checkpoint's gt_depth=True
     # config active.
     requested_gt_depth = bool(getattr(model, "gt_depth", False))
+    if strict_gt_depth and requested_gt_depth and depth_image is None:
+        raise RuntimeError("SD-VLM external depth was required but no depth image was supplied.")
     effective_gt_depth = requested_gt_depth and depth_image is not None
     if effective_gt_depth:
         ori_img = depth_image
@@ -403,6 +604,8 @@ def test_sample_sdvlm(
     viz_attn_mode: str = "all",
     debug_dtld_boxes: bool = False,
     debug_image_out_dir: Optional[Path] = None,
+    depth_provider: Optional[SDVLMDepthProvider] = None,
+    depth_metadata: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, str]:
     """Test all tasks on a single sample with SD-VLM.
 
@@ -420,6 +623,9 @@ def test_sample_sdvlm(
         viz_out_dir: Output directory for attention visualizations.
         viz_attn_mode: Which generated tokens to use for visualization –
             ``"all"`` or ``"first_answer_token"``.
+        depth_provider: Optional external depth provider. If omitted, uses
+            legacy behavior based on ``model.gt_depth``.
+        depth_metadata: Optional mutable mapping populated per task.
 
     Returns:
         Dictionary mapping task names to model responses.
@@ -464,17 +670,8 @@ def test_sample_sdvlm(
     if is_valid_bbox_xywh(bbox):
         target_box_image = make_target_box_overlay(rgb_image, rgb_image, bbox=bbox)
 
-    # --- Load depth image (optional, only used when model.gt_depth is True) ---
-    depth_image: Optional[Any] = None
-    if model.gt_depth:
-        depth_array = sample.get("depth_map")
-        if depth_array is not None:
-            depth_image = depth_array_to_pil(depth_array)
-        else:
-            print(
-                f"  [SD-VLM] gt_depth=True but no 'depth_map' found in sample "
-                f"'{sample_id}'; falling back to RGB-based depth estimation."
-            )
+    if depth_provider is None:
+        depth_provider = DatasetDepthProvider() if bool(getattr(model, "gt_depth", False)) else SDVLMDepthProvider()
 
     # --- Run per-task inference ---
     results: Dict[str, str] = {}
@@ -534,6 +731,15 @@ def test_sample_sdvlm(
                 f"{prompt}"
             )
 
+        depth_image, depth_meta = depth_provider.get_depth_image(
+            image=task_image,
+            sample=sample,
+            sample_id=sample_id,
+            task_name=task_name,
+        )
+        if depth_metadata is not None:
+            depth_metadata[task_name] = depth_meta
+
         response = run_task_sdvlm(
             model,
             tokenizer,
@@ -547,6 +753,7 @@ def test_sample_sdvlm(
             viz_attn=viz_attn,
             viz_out_dir=viz_out_dir,
             viz_attn_mode=viz_attn_mode,
+            strict_gt_depth=depth_provider.source == "da3",
         )
         results[task_name] = response
 
