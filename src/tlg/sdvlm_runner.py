@@ -24,9 +24,7 @@ are set on the model object after loading:
   ``ori_imgs``; ``ori_imgs`` should contain the depth as a PIL Image.
 
 LabLiquidVision provides ``Input_DepthMap.npy`` for every sample, so dataset
-GT depth is usable via ``--sdvlm-depth-source dataset`` or the legacy
-``--sdvlm-gt-depth`` flag.  ``--sdvlm-depth-source da3`` uses DepthAnything 3
-to generate external depth and passes it through the same GT-depth path.
+GT depth is usable via the ``--sdvlm-gt-depth`` flag.
 
 Attention visualization
 -----------------------
@@ -42,6 +40,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import io
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -61,6 +60,13 @@ MAX_NEW_TOKENS = 256
 
 # Channel counts for (C, H, W) shaped arrays (grayscale, RGB, RGBA).
 _LEADING_CHANNEL_COUNTS = (1, 3, 4)
+
+
+@dataclass(frozen=True)
+class SDVLMTaskInput:
+    task_name: str
+    image: Any
+    prompt: str
 
 
 class SDVLMDepthProvider:
@@ -177,7 +183,7 @@ class DepthAnything3Provider(SDVLMDepthProvider):
             from depth_anything_3.api import DepthAnything3
         except ImportError as exc:
             raise ImportError(
-                "DepthAnything 3 is required for --sdvlm-depth-source da3.\n"
+                "DepthAnything 3 is required for DA3 depth precomputation.\n"
                 "Install it from the official repository:\n"
                 "    git clone https://github.com/ByteDance-Seed/depth-anything-3.git\n"
                 "    cd depth-anything-3 && pip install -e ."
@@ -229,30 +235,6 @@ def _extract_da3_depth(prediction: Any) -> np.ndarray:
     if arr.ndim != 2:
         raise RuntimeError(f"DepthAnything 3 depth must be HxW or NxHxW, got shape={arr.shape}.")
     return arr
-
-
-def build_sdvlm_depth_provider(
-    depth_source: str,
-    *,
-    da3_model_path: str = DA3_MODEL_NAME,
-    da3_cache_dir: Optional[Path] = None,
-    da3_device: str = "cuda",
-) -> SDVLMDepthProvider:
-    """Build the depth provider used by SD-VLM inference."""
-
-    if depth_source == "internal":
-        return SDVLMDepthProvider()
-    if depth_source == "dataset":
-        return DatasetDepthProvider()
-    if depth_source == "da3":
-        if da3_cache_dir is None:
-            raise ValueError("da3_cache_dir is required when depth_source='da3'.")
-        return DepthAnything3Provider(
-            model_path=da3_model_path,
-            cache_dir=da3_cache_dir,
-            device=da3_device,
-        )
-    raise ValueError(f"Unsupported SD-VLM depth source: {depth_source!r}")
 
 
 def _require_llava() -> None:
@@ -630,9 +612,64 @@ def test_sample_sdvlm(
     Returns:
         Dictionary mapping task names to model responses.
     """
+    if depth_provider is None:
+        depth_provider = DatasetDepthProvider() if bool(getattr(model, "gt_depth", False)) else SDVLMDepthProvider()
+
+    # --- Run per-task inference ---
+    results: Dict[str, str] = {}
+    for task_input in build_sdvlm_task_inputs(
+        sample,
+        annotations,
+        dataset_name=dataset_name,
+        sample_id=sample_id,
+        debug_dtld_boxes=debug_dtld_boxes,
+        debug_image_out_dir=debug_image_out_dir,
+    ):
+        task_name = task_input.task_name
+        print(f"  [SD-VLM] Running task: {task_name}...")
+
+        depth_image, depth_meta = depth_provider.get_depth_image(
+            image=task_input.image,
+            sample=sample,
+            sample_id=sample_id,
+            task_name=task_name,
+        )
+        if depth_metadata is not None:
+            depth_metadata[task_name] = depth_meta
+
+        response = run_task_sdvlm(
+            model,
+            tokenizer,
+            image_processor,
+            task_input.image,
+            task_input.prompt,
+            depth_image,
+            dataset_name=dataset_name,
+            sample_id=sample_id,
+            task_name=task_name,
+            viz_attn=viz_attn,
+            viz_out_dir=viz_out_dir,
+            viz_attn_mode=viz_attn_mode,
+            strict_gt_depth=depth_provider.source == "da3",
+        )
+        results[task_name] = response
+
+    return results
+
+
+def build_sdvlm_task_inputs(
+    sample: Dict[str, Any],
+    annotations: List[TLGAnnotation],
+    *,
+    dataset_name: str,
+    sample_id: str,
+    debug_dtld_boxes: bool = False,
+    debug_image_out_dir: Optional[Path] = None,
+) -> List[SDVLMTaskInput]:
+    """Build the exact task images/prompts consumed by SD-VLM."""
+
     from PIL import Image, UnidentifiedImageError
 
-    # --- Load RGB image ---
     def _open_rgb_image(path: object, *, label: str):
         try:
             return Image.open(path).convert("RGB")
@@ -670,15 +707,10 @@ def test_sample_sdvlm(
     if is_valid_bbox_xywh(bbox):
         target_box_image = make_target_box_overlay(rgb_image, rgb_image, bbox=bbox)
 
-    if depth_provider is None:
-        depth_provider = DatasetDepthProvider() if bool(getattr(model, "gt_depth", False)) else SDVLMDepthProvider()
-
-    # --- Run per-task inference ---
-    results: Dict[str, str] = {}
+    out: List[SDVLMTaskInput] = []
     target_region_prompt = PromptBank.default().target_region_bbox_prompt()
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
-        print(f"  [SD-VLM] Running task: {task_name}...")
         region_box_image = _make_annotation_box_image(rgb_image, ann)
         use_target_box = (
             target_box_image is not None
@@ -730,34 +762,8 @@ def test_sample_sdvlm(
                 "Use these labels in your answer.\n\n"
                 f"{prompt}"
             )
-
-        depth_image, depth_meta = depth_provider.get_depth_image(
-            image=task_image,
-            sample=sample,
-            sample_id=sample_id,
-            task_name=task_name,
-        )
-        if depth_metadata is not None:
-            depth_metadata[task_name] = depth_meta
-
-        response = run_task_sdvlm(
-            model,
-            tokenizer,
-            image_processor,
-            task_image,
-            prompt,
-            depth_image,
-            dataset_name=dataset_name,
-            sample_id=sample_id,
-            task_name=task_name,
-            viz_attn=viz_attn,
-            viz_out_dir=viz_out_dir,
-            viz_attn_mode=viz_attn_mode,
-            strict_gt_depth=depth_provider.source == "da3",
-        )
-        results[task_name] = response
-
-    return results
+        out.append(SDVLMTaskInput(task_name=task_name, image=task_image, prompt=prompt))
+    return out
 
 
 def _make_annotation_box_image(image: Any, ann: TLGAnnotation) -> Optional[Any]:

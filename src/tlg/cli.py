@@ -139,44 +139,12 @@ def parse_args() -> argparse.Namespace:
         help="Disable depth encoding in SD-VLM (sets use_depth=False).",
     )
     parser.add_argument(
-        "--sdvlm-depth-source",
-        choices=["internal", "dataset", "da3"],
-        default="internal",
-        help=(
-            "Depth source for SD-VLM. 'internal' uses SD-VLM's built-in RGB depth "
-            "estimator, 'dataset' passes dataset-provided GT depth when available, "
-            "and 'da3' passes DepthAnything 3 depth through the GT-depth path."
-        ),
-    )
-    parser.add_argument(
         "--sdvlm-gt-depth",
         action="store_true",
         help=(
             "Use ground-truth depth maps from the dataset instead of estimating depth "
-            "internally. Backward-compatible alias for --sdvlm-depth-source dataset."
+            "internally (only applicable for datasets that provide depth, e.g. labliquidvision)."
         ),
-    )
-    parser.add_argument(
-        "--da3-model-path",
-        type=str,
-        default="depth-anything/DA3METRIC-LARGE",
-        help="HuggingFace model ID or local path for DepthAnything 3.",
-    )
-    parser.add_argument(
-        "--da3-cache-dir",
-        type=str,
-        default="",
-        help=(
-            "Directory for cached DepthAnything 3 depth arrays. Defaults to a "
-            "DA3 cache under the prediction/metrics output directory when possible, "
-            "otherwise bakery/da3_depth_cache."
-        ),
-    )
-    parser.add_argument(
-        "--da3-device",
-        type=str,
-        default="cuda",
-        help="Device used for DepthAnything 3 inference (default: cuda).",
     )
     return parser.parse_args()
 
