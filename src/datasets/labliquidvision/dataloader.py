@@ -7,7 +7,7 @@ import numpy as np
 
 from functools import partial
 
-from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation, simplify_container_type
 from tlg.annotations import discretize_fill_level_ordinal
 
 
@@ -173,7 +173,16 @@ class LabLiquidVisionDataset:
             )
 
         if isinstance(vessel, str) and vessel.strip():
-            annotations.append(add(task="container_type", answer=vessel.strip(), metadata={"vessel": vessel.strip()}))
+            vessel_label = vessel.strip()
+            annotations.append(add(task="container_type", answer=vessel_label, metadata={"vessel": vessel_label}))
+            if self._prompt_bank.supports(dataset, "container_type_simple"):
+                annotations.append(
+                    add(
+                        task="container_type_simple",
+                        answer=simplify_container_type(vessel_label),
+                        metadata={"vessel": vessel_label, "source_task": "container_type"},
+                    )
+                )
 
         if isinstance(color_liquid, str) and color_liquid.strip():
             annotations.append(

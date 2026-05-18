@@ -1,12 +1,3 @@
-# Prompt definitions for TLG.
-#
-# Editing policy:
-# - Keep prompts short and unambiguous.
-# - Prefer explicit output constraints (e.g., "Answer with only YES/NO").
-# - Only define prompts that have reliable supervision in at least one dataset.
-#
-# Dataset-to-prompt assignment lives in `dataset_prompts.yaml`.
-
 target_region_bbox_prompt:
   question: "The target region is inside the red bounding box. Answer only about that boxed region and ignore all other regions.\n\n"
 
@@ -26,8 +17,13 @@ fill_level_ordinal:
 
 container_type:
   task_type: "Container Type Recognition (classification)"
-  question: "Identify the container type. Choose exactly one: Tube_50mL, Tube_15mL, Pyrex_100mL, StorageBottle_250mL, StorageBottle_500mL, Duran_500mL, Duran_250mL, Cell_Flask_160mL, Cell_Flask_400mL, Duran_100mL, Gibco_125mL, Gibco_500mL, T25 Flask, T75 Flask, T175 Flask, G-rex, or Tip."
+  question: "Identify the liquid container type. Choose exactly one: Tube_50mL, Tube_15mL, Pyrex_100mL, StorageBottle_250mL, StorageBottle_500mL, Duran_500mL, Duran_250mL, Cell_Flask_160mL, Cell_Flask_400mL, Duran_100mL, Gibco_125mL, Gibco_500mL, T25 Flask, T75 Flask, T175 Flask, G-rex, or Tip."
   choices: ["Tube_50mL", "Tube_15mL", "Pyrex_100mL", "StorageBottle_250mL", "StorageBottle_500mL", "Duran_500mL", "Duran_250mL", "Cell_Flask_160mL", "Cell_Flask_400mL", "Duran_100mL", "Gibco_125mL", "Gibco_500mL", "T25 Flask", "T75 Flask", "T175 Flask", "G-rex", "Tip"]
+
+container_type_simple:
+  task_type: "Container Type Recognition (classification, no volume)"
+  question: "Identify the liquid container type. Choose exactly one: Tube, Pyrex, StorageBottle, Duran, Flask, Gibco, G-rex, or Tip."
+  choices: ["Tube", "Pyrex", "StorageBottle", "Duran", "Flask", "Gibco", "G-rex", "Tip"]
 
 container_count:
   task_type: "Container Counting (discrete)"

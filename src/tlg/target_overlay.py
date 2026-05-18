@@ -9,6 +9,7 @@ from typing import Any, Optional, Tuple
 DTLD_TARGET_BOX_TASKS = frozenset(
     {
         "container_type",
+        "container_type_simple",
         "fill_height_mm",
         "liquid_presence",
     }

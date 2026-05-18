@@ -19,6 +19,7 @@ class DTLDImageRoutingTest(unittest.TestCase):
     def test_container_count_uses_unmarked_image_and_object_tasks_use_bbox(self) -> None:
         self.assertFalse(should_mark_target_box("dtld", "container_count"))
         self.assertTrue(should_mark_target_box("dtld", "container_type"))
+        self.assertTrue(should_mark_target_box("dtld", "container_type_simple"))
         self.assertTrue(should_mark_target_box("dtld", "fill_height_mm"))
         self.assertTrue(should_mark_target_box("dtld", "liquid_presence"))
 

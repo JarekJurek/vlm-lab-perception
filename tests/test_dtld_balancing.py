@@ -164,10 +164,12 @@ class DTLDBalancingTest(unittest.TestCase):
 
             self.assertFalse(low_visibility_sample["target_occluded"])
             self.assertIn("container_type", _task_names(low_visibility_sample))
+            self.assertIn("container_type_simple", _task_names(low_visibility_sample))
             self.assertIn("fill_height_mm", _task_names(low_visibility_sample))
             self.assertIn("liquid_presence", _task_names(low_visibility_sample))
             self.assertFalse(visible_sample["target_occluded"])
             self.assertIn("container_type", _task_names(visible_sample))
+            self.assertIn("container_type_simple", _task_names(visible_sample))
             self.assertIn("fill_height_mm", _task_names(visible_sample))
             self.assertIn("liquid_presence", _task_names(visible_sample))
 
@@ -222,6 +224,21 @@ class DTLDBalancingTest(unittest.TestCase):
 
             self.assertTrue(dataset[0]["target_occluded"])
             self.assertIn("container_type", _task_names(dataset[0]))
+            self.assertIn("container_type_simple", _task_names(dataset[0]))
+
+    def test_container_type_simple_uses_no_volume_label(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_scene(root, "000000", 1)
+
+            dataset = DTLDDataset(root)
+            annotations = {
+                ann.metadata["task"]: ann
+                for ann in dataset[0]["annotations"]
+            }
+
+            self.assertEqual(annotations["container_type"].answer, "T25 Flask")
+            self.assertEqual(annotations["container_type_simple"].answer, "Flask")
 
 
 if __name__ == "__main__":

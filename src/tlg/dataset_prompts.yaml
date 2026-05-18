@@ -11,6 +11,7 @@ labliquidvision:
   - fill_percentage
   - fill_level_ordinal
   - container_type
+  - container_type_simple
   - liquid_color
 
 glasses:
@@ -20,6 +21,7 @@ glasses:
 dtld:
   - container_count
   - container_type
+  - container_type_simple
   - fill_height_mm
   - liquid_presence
 
@@ -34,6 +36,7 @@ ot2:
   - liquid_presence
   - container_count
   - container_type
+  - container_type_simple
   - fill_percentage
 
 pouring:

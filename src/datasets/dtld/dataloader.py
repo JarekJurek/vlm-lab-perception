@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 
 import numpy as np
 
-from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation, simplify_container_type
 from tlg.target_overlay import is_valid_bbox_xywh
 
 
@@ -463,7 +463,14 @@ class DTLDDataset:
             annotations.append(add(task=task, answer=answer, metadata=task_metadata))
 
         if obj_id_int is not None and obj_id_int in _DTLD_OBJECT_NAMES:
-            add_target_task("container_type", _DTLD_OBJECT_NAMES[obj_id_int], {"obj_id": obj_id_int})
+            container_type = _DTLD_OBJECT_NAMES[obj_id_int]
+            add_target_task("container_type", container_type, {"obj_id": obj_id_int})
+            if self._prompt_bank.supports(dataset, "container_type_simple"):
+                add_target_task(
+                    "container_type_simple",
+                    simplify_container_type(container_type),
+                    {"obj_id": obj_id_int, "source_task": "container_type"},
+                )
 
         container_count = sample.get("container_count")
         if (

@@ -9,7 +9,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
+from tlg import PromptBank, TLGAnnotation, make_tlg_annotation, simplify_container_type
 
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png"}
@@ -325,6 +325,15 @@ class OT2Dataset:
                     task="container_type",
                     answer="Tip",
                     metadata={"container_count": container_count},
+                )
+            )
+
+        if container_count > 0 and self._prompt_bank.supports(dataset, "container_type_simple"):
+            annotations.append(
+                add(
+                    task="container_type_simple",
+                    answer=simplify_container_type("Tip"),
+                    metadata={"container_count": container_count, "source_task": "container_type"},
                 )
             )
 
