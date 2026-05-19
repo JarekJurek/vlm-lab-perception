@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from itertools import combinations
+from math import comb
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union, cast
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 
 import numpy as np
 
@@ -13,6 +15,7 @@ from .dataloader import PouringDataset
 
 
 _ORDER_LABELS = ("A", "B", "C", "D")
+_DEFAULT_MAX_ORDERING_SAMPLES_PER_VIDEO = 128
 
 
 class PouringFrameOrderingDataset:
@@ -24,11 +27,15 @@ class PouringFrameOrderingDataset:
         prompt_bank: Optional[PromptBank] = None,
         shuffle: bool = False,
         seed: Optional[int] = None,
+        max_ordering_samples_per_video: int = _DEFAULT_MAX_ORDERING_SAMPLES_PER_VIDEO,
     ) -> None:
         self.root = Path(root)
         self.prompt_bank = prompt_bank or PromptBank.default()
         self.split = "test"
         self._seed = None if seed is None else int(seed)
+        self.max_ordering_samples_per_video = int(max_ordering_samples_per_video)
+        if self.max_ordering_samples_per_video <= 0:
+            raise ValueError("max_ordering_samples_per_video must be positive")
         self._dataset = PouringDataset(root, splits=(self.split,), prompt_bank=self.prompt_bank)
 
         samples = self._build_samples()
@@ -74,20 +81,36 @@ class PouringFrameOrderingDataset:
         for video_id, frame_infos in sorted(frames_by_video.items()):
             frame_infos = sorted(frame_infos, key=lambda item: item["frame_index"])
             if len(frame_infos) >= 3:
-                self._append_ordering_sample(samples, video_id, frame_infos)
+                self._append_ordering_samples(samples, video_id, frame_infos)
         return samples
 
-    def _append_ordering_sample(
+    def _append_ordering_samples(
         self,
         samples: List[Dict[str, Any]],
         video_id: str,
         frame_infos: Sequence[Dict[str, Any]],
     ) -> None:
         frame_count = 4 if len(frame_infos) >= 4 else 3
-        chosen_indices = np.linspace(0, len(frame_infos) - 1, num=frame_count, dtype=int).tolist()
-        chronological_frames = [frame_infos[i] for i in chosen_indices]
+        for chosen_indices in _sample_frame_combinations(
+            len(frame_infos),
+            frame_count,
+            max_samples=self.max_ordering_samples_per_video,
+            seed=_stable_seed(self._seed, video_id),
+        ):
+            self._append_ordering_sample(samples, video_id, frame_infos, chosen_indices)
 
-        rng = np.random.default_rng(_stable_seed(self._seed, video_id))
+    def _append_ordering_sample(
+        self,
+        samples: List[Dict[str, Any]],
+        video_id: str,
+        frame_infos: Sequence[Dict[str, Any]],
+        chosen_indices: Sequence[int],
+    ) -> None:
+        chronological_frames = [frame_infos[i] for i in chosen_indices]
+        frame_count = len(chronological_frames)
+
+        combo_key = "__".join(str(frame["frame_index"]) for frame in chronological_frames)
+        rng = np.random.default_rng(_stable_seed(self._seed, f"{video_id}:{combo_key}"))
         display_order = rng.permutation(frame_count).tolist()
         if display_order == list(range(frame_count)):
             display_order = list(reversed(display_order))
@@ -111,6 +134,7 @@ class PouringFrameOrderingDataset:
                 "split": self.split,
                 "video_id": video_id,
                 "frame_count": frame_count,
+                "ordering_frame_positions": list(chosen_indices),
                 "rgb_image": display_frames[0]["img_path"],
                 "ordered_rgb_images": [frame["img_path"] for frame in display_frames],
                 "ordered_image_labels": display_labels,
@@ -193,6 +217,25 @@ class PouringFrameOrderingDataset:
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
+
+
+def _sample_frame_combinations(
+    n_frames: int,
+    frame_count: int,
+    *,
+    max_samples: int,
+    seed: int,
+) -> List[Tuple[int, ...]]:
+    total = comb(n_frames, frame_count)
+    if total <= max_samples:
+        return list(combinations(range(n_frames), frame_count))
+
+    rng = np.random.default_rng(seed)
+    selected = set()
+    while len(selected) < max_samples:
+        combo = tuple(sorted(int(i) for i in rng.choice(n_frames, size=frame_count, replace=False)))
+        selected.add(combo)
+    return sorted(selected)
 
 
 def _stable_seed(seed: Optional[int], video_id: str) -> int:
