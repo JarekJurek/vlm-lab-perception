@@ -18,19 +18,62 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 from tlg import PromptBank
 from tlg.dataset_factory import DATA_ROOTS, build_dataset
 from tlg.reporting import validate_annotations
-from tlg.sdvlm_runner import (
-    DA3_MODEL_NAME,
-    DepthAnything3Provider,
-)
+
+
+DA3_MODEL_NAME = "depth-anything/DA3METRIC-LARGE"
+
+
+class DepthAnything3Estimator:
+    """DepthAnything 3 wrapper used only for offline cache precomputation."""
+
+    def __init__(self, *, model_path: str = DA3_MODEL_NAME, device: str = "cuda") -> None:
+        self.model_path = str(model_path)
+        self.device = str(device)
+        self._model: Optional[Any] = None
+
+    def _load_model(self) -> Any:
+        if self._model is not None:
+            return self._model
+        try:
+            from depth_anything_3.api import DepthAnything3
+        except ImportError as exc:
+            raise ImportError(
+                "DepthAnything 3 is required for DA3 depth precomputation.\n"
+                "Install it from the official repository:\n"
+                "    git clone https://github.com/ByteDance-Seed/depth-anything-3.git\n"
+                "    cd depth-anything-3 && pip install -e ."
+            ) from exc
+
+        model = DepthAnything3.from_pretrained(self.model_path)
+        if hasattr(model, "to"):
+            model = model.to(self.device)
+        if hasattr(model, "eval"):
+            model = model.eval()
+        self._model = model
+        return model
+
+    def infer_depth(self, image: Image.Image) -> np.ndarray:
+        model = self._load_model()
+        rgb = image.convert("RGB")
+        try:
+            import torch
+        except ImportError:
+            torch = None
+
+        if torch is None:
+            prediction = model.inference([rgb])
+        else:
+            with torch.inference_mode():
+                prediction = model.inference([rgb])
+        return np.asarray(_extract_da3_depth(prediction), dtype=np.float32)
 
 
 def main() -> None:
     args = parse_args()
     data_root_overrides = _parse_data_root_overrides(args.data_root)
     prompt_bank = PromptBank.default()
-    provider = DepthAnything3Provider(
+    estimator = DepthAnything3Estimator(
         model_path=str(args.da3_model_path),
-        cache_dir=Path(args.da3_cache_dir),
         device=str(args.da3_device),
     )
 
@@ -97,7 +140,7 @@ def main() -> None:
                     depth = np.load(depth_path)
                     status = "hit"
                 else:
-                    depth = provider._infer_depth(image)
+                    depth = estimator.infer_depth(image)
                     np.save(depth_path, depth.astype(np.float32, copy=False))
                     status = "miss"
 
@@ -207,6 +250,29 @@ def _depth_output_path(cache_dir: Path, dataset_name: str, sample: Dict[str, Any
 
 def _safe_path_part(value: str) -> str:
     return value.replace("/", "__").replace("\\", "__")
+
+
+def _extract_da3_depth(prediction: Any) -> np.ndarray:
+    """Extract the first depth map from supported DepthAnything 3 outputs."""
+
+    if isinstance(prediction, (list, tuple)) and prediction:
+        prediction = prediction[0]
+
+    if isinstance(prediction, dict):
+        depth = prediction.get("depth")
+    else:
+        depth = getattr(prediction, "depth", None)
+    if depth is None:
+        raise RuntimeError("DepthAnything 3 prediction did not contain a 'depth' field.")
+
+    if hasattr(depth, "detach") and hasattr(depth, "cpu"):
+        depth = depth.detach().cpu().numpy()
+    arr = np.asarray(depth, dtype=np.float32)
+    if arr.ndim == 3:
+        arr = arr[0]
+    if arr.ndim != 2:
+        raise RuntimeError(f"DepthAnything 3 depth must be HxW or NxHxW, got shape={arr.shape}.")
+    return arr
 
 
 def _select_indices(

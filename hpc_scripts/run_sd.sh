@@ -1,6 +1,6 @@
 #!/bin/bash
 ### --------------- job name ------------------
-#BSUB -J sdvlm_da3_all
+#BSUB -J sdvlm_cached_depth_all
 
 ### --------------- queue name ----------------
 #BSUB -q gpuv100
@@ -19,8 +19,8 @@
 #BSUB -W 8:00
 
 ### --------------- output and error files ---------------
-#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/sdvlm_da3_all_%J.out
-#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/sdvlm_da3_all_%J.err
+#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/sdvlm_cached_depth_all_%J.out
+#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/sdvlm_cached_depth_all_%J.err
     
 ### --------------- send email notifications -------------
 #BSUB -u s242911@dtu.dk
@@ -32,7 +32,7 @@ source /zhome/a2/c/213547/work3/venv_sd/bin/activate
 
 export HF_HOME="/zhome/a2/c/213547/work3/master_thesis/models/"
 export HF_HUB_CACHE="${HF_HOME}/hub"
-export DA3_MODEL_ID="depth-anything/DA3METRIC-LARGE"
+export SDVLM_DEPTH_DIR="${SDVLM_DEPTH_DIR:-bakery/sdvlm_da3_all/da3_depth_cache}"
 export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 export OPENBLAS_NUM_THREADS=4
@@ -41,12 +41,10 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 python3 test_qwen_vl_tasks.py \
     --model sdvlm \
-    --sdvlm-depth-source da3 \
-    --da3-model-path "${DA3_MODEL_ID}" \
-    --da3-cache-dir bakery/sdvlm_da3_all/da3_depth_cache \
+    --sdvlm-depth-dir "${SDVLM_DEPTH_DIR}" \
     --datasets labliquidvision glasses dtld labpicsv1 pouring ot2 \
     --max-samples 10 \
     --shuffle \
     --seed 42 \
-    --predictions-out bakery/sdvlm_da3_all/preds.jsonl \
-    --metrics-out bakery/sdvlm_da3_all/metrics.json
+    --predictions-out bakery/sdvlm_cached_depth_all/preds.jsonl \
+    --metrics-out bakery/sdvlm_cached_depth_all/metrics.json
