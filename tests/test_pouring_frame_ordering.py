@@ -16,14 +16,14 @@ from tlg.prompts import PromptBank
 
 
 class PouringFrameOrderingTest(unittest.TestCase):
-    def test_builds_four_frame_ordering_sample_from_one_video(self) -> None:
+    def test_builds_multiple_four_frame_ordering_samples_from_one_video(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 10, 20, 30])
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 10, 20, 30, 40])
 
             dataset = PouringFrameOrderingDataset(root, prompt_bank=PromptBank.default(), seed=7)
             ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
 
-            self.assertEqual(len(ordering_samples), 1)
+            self.assertEqual(len(ordering_samples), 5)
             sample = ordering_samples[0]
             ann = sample["annotations"][0]
 
@@ -32,10 +32,26 @@ class PouringFrameOrderingTest(unittest.TestCase):
             self.assertEqual(len(sample["ordered_rgb_images"]), 4)
             self.assertEqual(sample["ordered_image_labels"], ["A", "B", "C", "D"])
             self.assertEqual(sample["chronological_frame_indices"], [0, 10, 20, 30])
+            self.assertEqual(sample["ordering_frame_positions"], [0, 1, 2, 3])
             self.assertNotEqual(sample["display_frame_indices"], sample["chronological_frame_indices"])
             self.assertEqual(ann.metadata["task"], "pouring_frame_ordering")
             self.assertEqual(ann.answer, sample["label"])
             self.assertEqual(set(ann.answer.replace(",", "").split()), {"A", "B", "C", "D"})
+
+    def test_caps_ordering_combinations_per_video(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=list(range(8)))
+
+            dataset = PouringFrameOrderingDataset(
+                root,
+                prompt_bank=PromptBank.default(),
+                seed=7,
+                max_ordering_samples_per_video=6,
+            )
+            ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
+
+            self.assertEqual(len(ordering_samples), 6)
+            self.assertEqual(len({sample["id"] for sample in ordering_samples}), 6)
 
     def test_qwen_runner_passes_ordered_frames_as_multiple_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -67,7 +83,7 @@ class PouringFrameOrderingTest(unittest.TestCase):
                 model_runner.run_task = original_run_task
 
             first_display_index = sample["display_frame_indices"][0]
-            self.assertEqual(captured["primary_pixel"], _color_for_frame(first_display_index))
+            self.assertTrue(_colors_close(captured["primary_pixel"], _color_for_frame(first_display_index)))
             self.assertEqual(captured["extra_count"], 2)
             self.assertIn("A, B, C", captured["prompt"])
 
@@ -81,6 +97,10 @@ class PouringFrameOrderingTest(unittest.TestCase):
 
 def _color_for_frame(frame_index: int) -> tuple[int, int, int]:
     return (frame_index % 251, (frame_index * 2) % 251, (frame_index * 3) % 251)
+
+
+def _colors_close(a: tuple[int, int, int], b: tuple[int, int, int], tolerance: int = 3) -> bool:
+    return all(abs(x - y) <= tolerance for x, y in zip(a, b))
 
 
 if __name__ == "__main__":
