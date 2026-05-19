@@ -155,7 +155,7 @@ class DepthAnything3Provider(SDVLMDepthProvider):
             np.save(cache_path, depth.astype(np.float32, copy=False))
             cache_status = "miss"
 
-        print(f"    [SD-VLM] DA3 depth cache {cache_status}: {cache_path.name}")
+        print(f"    [DA3] depth cache {cache_status}: {cache_path.name}")
         return depth_array_to_pil(depth), {
             "sdvlm_depth_source": self.source,
             "sdvlm_depth_cache_status": cache_status,

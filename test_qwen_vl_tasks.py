@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import sys
 
 # Ensure `src/` is on PYTHONPATH so imports match README usage.
@@ -47,9 +48,13 @@ def main():
     run_qwen = model_choice in ("qwen", "both")
     run_sdvlm = model_choice in ("sdvlm", "both")
 
-    # SD-VLM needs depth arrays in the sample when --sdvlm-gt-depth is set.
-    use_gt_depth = bool(args.sdvlm_gt_depth)
-    include_depth = run_sdvlm and use_gt_depth
+    precomputed_depth_dir = Path(args.sdvlm_depth_dir) if args.sdvlm_depth_dir else None
+    if run_sdvlm and args.sdvlm_no_depth and precomputed_depth_dir is not None:
+        raise ValueError("--sdvlm-no-depth cannot be combined with --sdvlm-depth-dir.")
+
+    # SD-VLM needs depth arrays in the sample when external/GT depth is set.
+    use_gt_depth = bool(args.sdvlm_gt_depth) or precomputed_depth_dir is not None
+    include_depth = run_sdvlm and bool(args.sdvlm_gt_depth) and precomputed_depth_dir is None
 
     if args.dry_run:
         print("Dry run: validating dataset loading + standardized annotations (no model).")
@@ -223,6 +228,8 @@ def main():
             # --- SD-VLM inference ---
             if run_sdvlm:
                 try:
+                    if precomputed_depth_dir is not None:
+                        _attach_precomputed_depth_map(sample, dataset_name, precomputed_depth_dir)
                     sdvlm_results = test_sample_sdvlm(
                         sdvlm_model,
                         sdvlm_tokenizer,
@@ -293,6 +300,7 @@ def main():
                 "max_new_tokens": int(SDVLM_MAX_NEW_TOKENS),
                 "use_depth": not args.sdvlm_no_depth,
                 "gt_depth": use_gt_depth,
+                "precomputed_depth_dir": str(precomputed_depth_dir) if precomputed_depth_dir is not None else None,
                 "overall": {k: v.to_dict() for k, v in overall_stats["sdvlm"].items()},
                 "per_dataset": {
                     ds: {k: v.to_dict() for k, v in stats.items()}
@@ -368,6 +376,32 @@ def _record_results(
                 if key in rec:
                     row[key] = rec[key]
             pred_fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _attach_precomputed_depth_map(sample: Dict[str, Any], dataset_name: str, depth_dir: Path) -> None:
+    depth_path = _precomputed_depth_path(sample, dataset_name, depth_dir)
+    if not depth_path.exists():
+        raise FileNotFoundError(f"Precomputed depth map not found: {depth_path}")
+    sample["depth_map"] = np.load(depth_path)
+    sample["depth_map_path"] = depth_path
+
+
+def _precomputed_depth_path(sample: Dict[str, Any], dataset_name: str, depth_dir: Path) -> Path:
+    if dataset_name == "dtld":
+        scene_id = str(sample.get("scene_id", "unknown"))
+        frame_id = sample.get("frame_id", "unknown")
+        if isinstance(frame_id, int):
+            frame_name = f"{frame_id:06d}"
+        else:
+            frame_name = _safe_path_part(str(frame_id))
+        return depth_dir / dataset_name / _safe_path_part(scene_id) / f"{frame_name}.npy"
+
+    sample_id = _safe_path_part(str(sample.get("id", "unknown")))
+    return depth_dir / dataset_name / f"{sample_id}.npy"
+
+
+def _safe_path_part(value: str) -> str:
+    return value.replace("/", "__").replace("\\", "__")
 
 
 def _select_indices(
