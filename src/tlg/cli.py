@@ -146,6 +146,15 @@ def parse_args() -> argparse.Namespace:
             "internally (only applicable for datasets that provide depth, e.g. labliquidvision)."
         ),
     )
+    parser.add_argument(
+        "--sdvlm-depth-dir",
+        type=str,
+        default="",
+        help=(
+            "Directory containing precomputed .npy depth maps to load as SD-VLM "
+            "GT-style depth. Does not run a depth model."
+        ),
+    )
     return parser.parse_args()
 
 
