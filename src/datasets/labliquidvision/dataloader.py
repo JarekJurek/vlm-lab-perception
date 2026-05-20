@@ -141,7 +141,7 @@ class LabLiquidVisionDataset:
         vol_liquid = _as_float(sample.get("vol_liquid"))
         vol_vessel = _as_float(sample.get("vol_vessel"))
 
-        if vol_liquid is not None:
+        if vol_liquid is not None and self._prompt_bank.supports(dataset, "liquid_presence"):
             annotations.append(
                 add(
                     task="liquid_presence",
@@ -153,28 +153,31 @@ class LabLiquidVisionDataset:
         if vol_liquid is not None and vol_vessel is not None and vol_vessel > 0:
             fill_percentage = (vol_liquid / vol_vessel) * 100.0
             fill_percentage = float(max(0.0, min(100.0, fill_percentage)))
-            annotations.append(
-                add(
-                    task="fill_percentage",
-                    answer=round(fill_percentage, 1),
-                    metadata={
-                        "vol_liquid": vol_liquid,
-                        "vol_vessel": vol_vessel,
-                        "derived_fill_percentage": round(fill_percentage, 6),
-                    },
+            if self._prompt_bank.supports(dataset, "fill_percentage"):
+                annotations.append(
+                    add(
+                        task="fill_percentage",
+                        answer=round(fill_percentage, 1),
+                        metadata={
+                            "vol_liquid": vol_liquid,
+                            "vol_vessel": vol_vessel,
+                            "derived_fill_percentage": round(fill_percentage, 6),
+                        },
+                    )
                 )
-            )
-            annotations.append(
-                add(
-                    task="fill_level_ordinal",
-                    answer=discretize_fill_level_ordinal(fill_percentage),
-                    metadata={"derived_fill_percentage": round(fill_percentage, 6)},
+            if self._prompt_bank.supports(dataset, "fill_level_ordinal"):
+                annotations.append(
+                    add(
+                        task="fill_level_ordinal",
+                        answer=discretize_fill_level_ordinal(fill_percentage),
+                        metadata={"derived_fill_percentage": round(fill_percentage, 6)},
+                    )
                 )
-            )
 
         if isinstance(vessel, str) and vessel.strip():
             vessel_label = vessel.strip()
-            annotations.append(add(task="container_type", answer=vessel_label, metadata={"vessel": vessel_label}))
+            if self._prompt_bank.supports(dataset, "container_type"):
+                annotations.append(add(task="container_type", answer=vessel_label, metadata={"vessel": vessel_label}))
             if self._prompt_bank.supports(dataset, "container_type_simple"):
                 annotations.append(
                     add(
@@ -184,7 +187,11 @@ class LabLiquidVisionDataset:
                     )
                 )
 
-        if isinstance(color_liquid, str) and color_liquid.strip():
+        if (
+            isinstance(color_liquid, str)
+            and color_liquid.strip()
+            and self._prompt_bank.supports(dataset, "liquid_color")
+        ):
             annotations.append(
                 add(task="liquid_color", answer=color_liquid.strip(), metadata={"color_liquid": color_liquid.strip()})
             )

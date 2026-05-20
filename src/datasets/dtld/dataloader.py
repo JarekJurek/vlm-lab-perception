@@ -456,6 +456,8 @@ class DTLDDataset:
         )
 
         def add_target_task(task: str, answer: object, metadata: Optional[Dict[str, object]] = None) -> None:
+            if not self._prompt_bank.supports(dataset, task):
+                return
             if not target_is_usable:
                 return
             task_metadata = dict(metadata or {})

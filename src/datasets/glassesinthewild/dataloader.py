@@ -106,21 +106,23 @@ class GlassesInTheWildDataset:
 
         if fill is not None:
             fill_clamped = float(max(0.0, min(100.0, fill)))
-            annotations.append(
-                add(
-                    task="fill_percentage",
-                    answer=round(fill_clamped, 1),
-                    metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+            if self._prompt_bank.supports(dataset, "fill_percentage"):
+                annotations.append(
+                    add(
+                        task="fill_percentage",
+                        answer=round(fill_clamped, 1),
+                        metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+                    )
                 )
-            )
             # A pragmatic definition: >~empty threshold implies liquid present.
-            annotations.append(
-                add(
-                    task="liquid_presence",
-                    answer="YES" if fill_clamped > 1.0 else "NO",
-                    metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+            if self._prompt_bank.supports(dataset, "liquid_presence"):
+                annotations.append(
+                    add(
+                        task="liquid_presence",
+                        answer="YES" if fill_clamped > 1.0 else "NO",
+                        metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+                    )
                 )
-            )
 
         return annotations
 
