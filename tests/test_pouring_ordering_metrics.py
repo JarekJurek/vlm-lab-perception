@@ -28,9 +28,13 @@ class PouringOrderingMetricsTest(unittest.TestCase):
 
         self.assertTrue(rec["valid"])
         self.assertFalse(rec["correct"])
+        self.assertEqual(rec["position_correct"], 2)
+        self.assertEqual(rec["position_total"], 4)
+        self.assertAlmostEqual(rec["position_accuracy"], 0.5)
         self.assertEqual(rec["pairwise_correct"], 5)
         self.assertEqual(rec["pairwise_total"], 6)
         self.assertAlmostEqual(rec["pairwise_accuracy"], 5.0 / 6.0)
+        self.assertAlmostEqual(rec["kendall_tau"], 2.0 / 3.0)
 
     def test_task_stats_aggregates_pairwise_ordering_accuracy(self) -> None:
         stats = TaskStats()
@@ -42,9 +46,13 @@ class PouringOrderingMetricsTest(unittest.TestCase):
 
         out = stats.to_dict()
         self.assertEqual(out["accuracy"], 0.5)
+        self.assertEqual(out["position_correct"], 6)
+        self.assertEqual(out["position_total"], 8)
+        self.assertAlmostEqual(out["position_accuracy"], 0.75)
         self.assertEqual(out["pairwise_correct"], 11)
         self.assertEqual(out["pairwise_total"], 12)
         self.assertAlmostEqual(out["pairwise_accuracy"], 11.0 / 12.0)
+        self.assertAlmostEqual(out["kendall_tau"], 5.0 / 6.0)
 
 
 if __name__ == "__main__":

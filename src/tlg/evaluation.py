@@ -234,15 +234,22 @@ def _frame_order_label_list(text: object) -> Optional[List[str]]:
     return [label.strip() for label in parsed.split(",")]
 
 
-def _score_frame_ordering_pairwise(pred: object, gt: object) -> Dict[str, object]:
+def _score_frame_ordering(pred: object, gt: object) -> Dict[str, object]:
     pred_labels = _frame_order_label_list(pred)
     gt_labels = _frame_order_label_list(gt)
     if pred_labels is None or gt_labels is None:
         return {}
 
+    position_total = len(gt_labels)
+    position_correct = sum(
+        1
+        for pred_label, gt_label in zip(pred_labels, gt_labels)
+        if pred_label == gt_label
+    )
+
     pred_pos = {label: i for i, label in enumerate(pred_labels)}
     total = 0
-    correct = 0
+    pairwise_correct = 0
     for i, earlier in enumerate(gt_labels):
         for later in gt_labels[i + 1:]:
             total += 1
@@ -251,12 +258,23 @@ def _score_frame_ordering_pairwise(pred: object, gt: object) -> Dict[str, object
                 and later in pred_pos
                 and pred_pos[earlier] < pred_pos[later]
             ):
-                correct += 1
+                pairwise_correct += 1
+
+    pairwise_accuracy = (float(pairwise_correct) / float(total)) if total > 0 else None
+    kendall_tau = None
+    if pairwise_accuracy is not None:
+        kendall_tau = (2.0 * pairwise_accuracy) - 1.0
 
     return {
-        "pairwise_correct": correct,
+        "position_correct": position_correct,
+        "position_total": position_total,
+        "position_accuracy": (
+            float(position_correct) / float(position_total)
+        ) if position_total > 0 else None,
+        "pairwise_correct": pairwise_correct,
         "pairwise_total": total,
-        "pairwise_accuracy": (float(correct) / float(total)) if total > 0 else None,
+        "pairwise_accuracy": pairwise_accuracy,
+        "kendall_tau": kendall_tau,
     }
 
 
@@ -599,7 +617,7 @@ def score_prediction(
 
     record["correct"] = labels_equal(task, pred, gt)
     if task == "pouring_frame_ordering":
-        record.update(_score_frame_ordering_pairwise(pred, gt))
+        record.update(_score_frame_ordering(pred, gt))
     return record
 
 
@@ -616,6 +634,8 @@ class TaskStats:
     f1_sum: float = 0.0
     mean_iou_sum: float = 0.0
     n_grounding: int = 0
+    position_correct: int = 0
+    position_total: int = 0
     pairwise_correct: int = 0
     pairwise_total: int = 0
 
@@ -652,6 +672,12 @@ class TaskStats:
             self.pairwise_correct += pairwise_correct
             self.pairwise_total += pairwise_total
 
+        position_correct = rec.get("position_correct")
+        position_total = rec.get("position_total")
+        if isinstance(position_correct, int) and isinstance(position_total, int):
+            self.position_correct += position_correct
+            self.position_total += position_total
+
     def to_dict(self) -> Dict[str, object]:
         out: Dict[str, object] = {
             "n": int(self.n),
@@ -670,8 +696,13 @@ class TaskStats:
             out["recall"] = self.recall_sum / float(self.n_grounding)
             out["f1"] = self.f1_sum / float(self.n_grounding)
             out["mean_iou"] = self.mean_iou_sum / float(self.n_grounding)
+        if self.position_total > 0:
+            out["position_correct"] = int(self.position_correct)
+            out["position_total"] = int(self.position_total)
+            out["position_accuracy"] = float(self.position_correct) / float(self.position_total)
         if self.pairwise_total > 0:
             out["pairwise_correct"] = int(self.pairwise_correct)
             out["pairwise_total"] = int(self.pairwise_total)
             out["pairwise_accuracy"] = float(self.pairwise_correct) / float(self.pairwise_total)
+            out["kendall_tau"] = (2.0 * out["pairwise_accuracy"]) - 1.0
         return out
