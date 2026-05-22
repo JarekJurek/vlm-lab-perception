@@ -15,6 +15,7 @@ from tlg import PromptBank, TLGAnnotation, make_tlg_annotation, simplify_contain
 _IMG_EXTS = {".jpg", ".jpeg", ".png"}
 _DEFAULT_SPLITS: Tuple[str, ...] = ("train", "valid", "test")
 _SEQ_RE = re.compile(r"^(?P<base>.*)_(?P<idx>\d+)$")
+_NO_TIPS_RE = re.compile(r"^NoTips_\d+$")
 
 
 _DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
@@ -81,8 +82,10 @@ class OT2Dataset:
         # 1) Standard YOLO split layout: root/{train,valid,test}/{images,labels}/...
         # 2) Flat layout: root/*.jpg + root/*.txt (labels alongside images)
         self._flat_dir: Optional[Path] = None
+        self._flat_extra_image_dirs: Tuple[Path, ...] = ()
         if not self._has_yolo_split_layout():
             self._flat_dir = self._discover_flat_dir()
+            self._flat_extra_image_dirs = self._discover_flat_extra_image_dirs()
 
         if ids is not None:
             self._entries = self._resolve_ids(list(ids))
@@ -129,13 +132,42 @@ class OT2Dataset:
                     return d
         return None
 
+    def _discover_flat_extra_image_dirs(self) -> Tuple[Path, ...]:
+        """Find flat image-only dirs that contain convention-labeled negatives."""
+
+        candidates = [
+            self.root / "Training Data" / "Images",
+        ]
+        dirs: List[Path] = []
+        for d in candidates:
+            if not d.is_dir():
+                continue
+            if self._flat_dir is not None and d.resolve() == self._flat_dir.resolve():
+                continue
+            if any(_is_no_tips_stem(p.stem) for p in d.iterdir() if p.is_file() and p.suffix.lower() in _IMG_EXTS):
+                dirs.append(d)
+        return tuple(dirs)
+
     def _discover_entries(self) -> List[Tuple[str, Path]]:
         entries: List[Tuple[str, Path]] = []
 
         # Flat mode.
         if self._flat_dir is not None:
+            seen: set[Path] = set()
             for p in sorted(self._flat_dir.iterdir()):
                 if p.is_file() and p.suffix.lower() in _IMG_EXTS:
+                    seen.add(p.resolve())
+                    entries.append(("all", p))
+            for d in self._flat_extra_image_dirs:
+                for p in sorted(d.iterdir()):
+                    if not p.is_file() or p.suffix.lower() not in _IMG_EXTS:
+                        continue
+                    if not _is_no_tips_stem(p.stem):
+                        continue
+                    resolved = p.resolve()
+                    if resolved in seen:
+                        continue
+                    seen.add(resolved)
                     entries.append(("all", p))
             return entries
 
@@ -171,21 +203,10 @@ class OT2Dataset:
 
             # Flat mode ids.
             if self._flat_dir is not None and "/" not in s:
-                p = self._flat_dir / s
-                if p.suffix.lower() not in _IMG_EXTS:
-                    # Try all extensions.
-                    candidate: Optional[Path] = None
-                    for ext in sorted(_IMG_EXTS):
-                        q = self._flat_dir / f"{s}{ext}"
-                        if q.exists():
-                            candidate = q
-                            break
-                    if candidate is None:
-                        raise FileNotFoundError(f"Could not resolve OT2 id={raw!r} in flat_dir={self._flat_dir}")
-                    p = candidate
-                if not p.exists():
-                    raise FileNotFoundError(f"Could not resolve OT2 id={raw!r} in flat_dir={self._flat_dir}")
-                entries.append(("all", p))
+                candidate = self._resolve_flat_id(s)
+                if candidate is None:
+                    raise FileNotFoundError(f"Could not resolve OT2 id={raw!r} in flat dirs")
+                entries.append(("all", candidate))
                 continue
 
             parts = s.split("/", 1)
@@ -250,10 +271,35 @@ class OT2Dataset:
         if frame_index is not None:
             sample["frame_index"] = frame_index
 
-        sample["annotations"] = self._build_annotations(image_id=image_id, boxes=boxes)
+        sample["annotations"] = self._build_annotations(
+            image_id=image_id,
+            boxes=boxes,
+            is_no_tips_negative=_is_no_tips_stem(img_path.stem),
+        )
         return sample
 
-    def _build_annotations(self, image_id: str, boxes: List[YoloBox]) -> List[TLGAnnotation]:
+    def _resolve_flat_id(self, value: str) -> Optional[Path]:
+        dirs = [self._flat_dir, *self._flat_extra_image_dirs]
+        for d in dirs:
+            if d is None:
+                continue
+            p = d / value
+            if p.suffix.lower() in _IMG_EXTS and p.exists():
+                return p
+            if p.suffix.lower() not in _IMG_EXTS:
+                for ext in sorted(_IMG_EXTS):
+                    q = d / f"{value}{ext}"
+                    if q.exists():
+                        return q
+        return None
+
+    def _build_annotations(
+        self,
+        image_id: str,
+        boxes: List[YoloBox],
+        *,
+        is_no_tips_negative: bool = False,
+    ) -> List[TLGAnnotation]:
         dataset = "ot2"
         add = partial(
             make_tlg_annotation,
@@ -262,14 +308,29 @@ class OT2Dataset:
             image_id=image_id,
         )
 
-        tip_boxes = [b for b in boxes if int(b.cls) == 0]
-        liquid_boxes = [b for b in boxes if int(b.cls) == 1]
+        if is_no_tips_negative:
+            tip_boxes: List[YoloBox] = []
+            liquid_boxes: List[YoloBox] = []
+        else:
+            tip_boxes = [b for b in boxes if int(b.cls) == 0]
+            liquid_boxes = [b for b in boxes if int(b.cls) == 1]
 
         container_count = len(tip_boxes)
         liquid_box_count = len(liquid_boxes)
         fill_percentage = _compute_fill_percentage(tip_boxes, liquid_boxes)
 
         annotations: List[TLGAnnotation] = []
+
+        if is_no_tips_negative:
+            if self._prompt_bank.supports(dataset, "tip_presence"):
+                annotations.append(
+                    add(
+                        task="tip_presence",
+                        answer="NO",
+                        metadata={"container_count": 0, "source": "no_tips_filename"},
+                    )
+                )
+            return annotations
 
         if self._prompt_bank.supports(dataset, "liquid_grounding"):
             annotations.append(
@@ -347,6 +408,10 @@ def _derive_sequence_fields(stem: str) -> Tuple[Optional[str], Optional[int]]:
     base = m.group("base")
     idx = int(m.group("idx"))
     return base, idx
+
+
+def _is_no_tips_stem(stem: str) -> bool:
+    return bool(_NO_TIPS_RE.match(stem))
 
 
 def _parse_yolo_label_file(path: Path) -> List[YoloBox]:
