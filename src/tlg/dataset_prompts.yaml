@@ -32,12 +32,12 @@ labpicsv1:
 
 ot2:
   - liquid_grounding
+  - fill_percentage
   - tip_presence
   - liquid_presence
   - container_count
   - container_type
   - container_type_simple
-  - fill_percentage
 
 pouring:
   - liquid_presence

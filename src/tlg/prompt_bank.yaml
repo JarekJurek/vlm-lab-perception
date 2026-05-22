@@ -7,7 +7,7 @@ target_region_bbox_prompt:
 liquid_presence:
   task_type: "Liquid Presence Detection (binary)"
   question: |
-    You are analyzing a laboratory image of a container.
+    You are analyzing a laboratory image of a liquid container.
 
     Your task is to determine whether any liquid is visibly present inside the container.
     Count transparent, colored, or partially occluded liquid as present if a liquid region, meniscus, or fill boundary is visible.
@@ -22,7 +22,7 @@ fill_percentage:
   question: |
     You are analyzing a laboratory image of a liquid container.
 
-    Your task is to estimate the visible liquid fill level as a percentage from 0 to 100.
+    Estimate what percentage of the container's usable height is filled with visible liquid.
     Use the visible liquid surface, container bottom, and usable container height as reference points.
     Treat 0 as empty and 100 as completely full. Ignore caps, labels, glare, shadows, perspective distortion, and background objects.
 
@@ -44,11 +44,10 @@ fill_level_ordinal:
 container_type:
   task_type: "Container Type Recognition (classification)"
   question: |
-    You are analyzing a laboratory image containing one primary lab container or labware item.
+    You are analyzing a laboratory image of a liquid container.
 
-    Your task is to identify the specific container type and size shown in the image.
+    Your task is to identify the specific container type shown in the image.
     Base the decision on the container shape, cap style, neck, body geometry, volume markings, and overall proportions.
-    If multiple items are visible, choose the main target container.
 
     Options: Tube_50mL, Tube_15mL, Pyrex_100mL, StorageBottle_250mL, StorageBottle_500mL, Duran_500mL, Duran_250mL, Cell_Flask_160mL, Cell_Flask_400mL, Duran_100mL, Gibco_125mL, Gibco_500mL, T25 Flask, T75 Flask, T175 Flask, G-rex, Tip.
     Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
@@ -57,11 +56,10 @@ container_type:
 container_type_simple:
   task_type: "Container Type Recognition (classification, no volume)"
   question: |
-    You are analyzing a laboratory image containing one primary lab container or labware item.
+    You are analyzing a laboratory image of a liquid container.
 
-    Your task is to identify the general container family, ignoring exact volume or size.
+    Your task is to identify the specific container type shown in the image.
     Base the decision on the container shape, cap style, neck, body geometry, and overall labware appearance.
-    If multiple items are visible, choose the main target container.
 
     Options: Tube, Pyrex, StorageBottle, Duran, Flask, Gibco, G-rex, Tip.
     Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
@@ -73,8 +71,8 @@ container_count:
     You are analyzing a laboratory image.
 
     Your task is to count how many liquid containers are visible in the image.
-    Count lab containers such as tubes, bottles, flasks, cups, wells, vials, and similar vessels that could contain liquid.
-    Do not count pipette tips, caps alone, labels, stands, holders, instruments, hands, or background objects as containers.
+    Count lab containers that are designed to contain liquid.
+    Do not count caps alone, labels, stands, holders, instruments, hands, or background objects as containers.
 
     Output format: only one integer 0 or greater. Do not include explanations, units, punctuation, or extra words.
     Example outputs: 0, 1, 2, 3.
@@ -95,7 +93,7 @@ liquid_color:
   question: |
     You are analyzing a laboratory image of a liquid container.
 
-    Your task is to identify the apparent color of the visible liquid.
+    Your task is to identify the color of the visible liquid.
     Base the answer on the liquid region itself, not on container tint, labels, reflections, shadows, caps, or background objects.
     If the liquid appears transparent or nearly colorless, answer with a simple color name such as clear.
 
@@ -106,8 +104,8 @@ tip_presence:
   question: |
     You are analyzing a laboratory image.
 
-    Your task is to determine whether a pipette tip is visibly present.
-    Count attached or detached pipette tips as present if the tip shape is visible.
+    Your task is to determine whether there are any pipette tips present.
+    Count attached tips as present if the tip shape is visible.
     Do not count tubes, caps, needles, bottles, labels, or other narrow lab objects as pipette tips unless they clearly match a pipette tip.
 
     Options: YES, NO.
@@ -175,8 +173,8 @@ pouring_frame_ordering:
     You are analyzing labeled frames from the same laboratory water-pouring video.
 
     Your task is to arrange the frames into the most plausible chronological order of the pouring action.
-    Use visual cues such as container tilt, stream formation, water level changes, splash state, hand or object motion, and the progression from before-pour to during-pour to after-pour.
-    The frames are shown out of chronological order and are labeled A, B, C, and optionally D.
+    Use visual cues such as container tilt, stream formation, water level changes or splash state.
+    The frames are shown out of chronological order and first image is labeled A, second B, third C, and fourth D.
 
     Output format: only the frame labels in chronological order, separated by commas.
     Do not include explanations, numbering, punctuation beyond commas, or extra words.
