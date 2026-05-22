@@ -163,6 +163,8 @@ class DTLDBalancingTest(unittest.TestCase):
             visible_sample = dataset[1]
 
             self.assertFalse(low_visibility_sample["target_occluded"])
+            self.assertFalse(low_visibility_sample["container_count_ambiguous"])
+            self.assertIn("container_count", _task_names(low_visibility_sample))
             self.assertIn("container_type", _task_names(low_visibility_sample))
             self.assertIn("container_type_simple", _task_names(low_visibility_sample))
             self.assertIn("fill_height_mm", _task_names(low_visibility_sample))
@@ -197,7 +199,9 @@ class DTLDBalancingTest(unittest.TestCase):
 
             self.assertTrue(dataset[0]["target_occluded"])
             self.assertTrue(dataset[1]["target_occluded"])
-            self.assertEqual(_task_names(dataset[0]), {"container_count"})
+            self.assertTrue(dataset[0]["container_count_ambiguous"])
+            self.assertTrue(dataset[1]["container_count_ambiguous"])
+            self.assertEqual(_task_names(dataset[0]), set())
             self.assertEqual(_task_names(dataset[1]), set())
 
     def test_occluded_target_filter_can_be_disabled(self) -> None:

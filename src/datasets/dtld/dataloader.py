@@ -161,6 +161,33 @@ def _count_dtld_visible_containers(
     return count
 
 
+def _has_occluded_dtld_visible_container(
+    objects: List[Dict[str, Any]],
+    infos: Optional[List[Dict[str, Any]]],
+    *,
+    bbox_overlap_threshold: float,
+) -> bool:
+    if infos is None:
+        return False
+
+    for idx, obj in enumerate(objects):
+        obj_id = _as_int(obj.get("obj_id"))
+        if obj_id not in _DTLD_OBJECT_NAMES:
+            continue
+        if idx >= len(infos) or not _has_visible_area(infos[idx]):
+            continue
+
+        occluded, _metadata = _is_dtld_target_occluded(
+            infos[idx],
+            infos,
+            target_idx=idx,
+            bbox_overlap_threshold=bbox_overlap_threshold,
+        )
+        if occluded:
+            return True
+    return False
+
+
 class DTLDDataset:
     """Minimal folder-based dataset loader for DTLD."""
 
@@ -359,6 +386,11 @@ class DTLDDataset:
         info = cast(Optional[Dict[str, List[Dict[str, Any]]]], scene_data.get("info"))
         frame_infos = info.get(str(frame_id)) if info is not None and str(frame_id) in info else None
         sample["container_count"] = _count_dtld_visible_containers(frame_liquid_objects, frame_infos)
+        sample["container_count_ambiguous"] = _has_occluded_dtld_visible_container(
+            frame_liquid_objects,
+            frame_infos,
+            bbox_overlap_threshold=self._occluded_bbox_overlap_threshold,
+        )
         frame_info = None
         if info is not None and str(frame_id) in info and obj_idx < len(info[str(frame_id)]):
             frame_info = info[str(frame_id)][obj_idx]
@@ -479,12 +511,17 @@ class DTLDDataset:
             obj_idx == 0
             and self._prompt_bank.supports(dataset, "container_count")
             and isinstance(container_count, int)
+            and not bool(sample.get("container_count_ambiguous"))
         ):
             annotations.append(
                 add(
                     task="container_count",
                     answer=container_count,
-                    metadata={"container_count": container_count, "frame_level": True},
+                    metadata={
+                        "container_count": container_count,
+                        "container_count_ambiguous": False,
+                        "frame_level": True,
+                    },
                 )
             )
 

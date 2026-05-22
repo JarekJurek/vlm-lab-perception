@@ -14,7 +14,7 @@ Supported models (--model flag):
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import sys
@@ -33,6 +33,23 @@ from tlg.sdvlm_runner import (
     test_sample_sdvlm,
 )
 from tlg.reporting import print_ground_truth, print_stats, validate_annotations
+
+
+def _empty_annotation_skip_reason(dataset_name: str, sample: Dict[str, Any]) -> str:
+    if dataset_name == "dtld":
+        reasons: List[str] = []
+        if bool(sample.get("target_occluded")):
+            reasons.append("target object is occluded by bbox-overlap filtering")
+        if bool(sample.get("container_count_ambiguous")):
+            reasons.append("container_count is ambiguous because a visible container is occluded")
+        if reasons:
+            return "; ".join(reasons)
+    return "no standardized annotations available"
+
+
+def _has_standardized_annotations(sample: Dict[str, Any]) -> bool:
+    annotations = sample.get("annotations")
+    return isinstance(annotations, list) and bool(annotations)
 
 
 def main():
@@ -136,7 +153,7 @@ def main():
             continue
 
         max_samples = len(dataset) if args.max_samples is None else max(1, int(args.max_samples))
-        indices = _select_indices(
+        indices, skipped_empty_candidates = _select_indices(
             dataset,
             dataset_name=dataset_name,
             max_samples=max_samples,
@@ -148,6 +165,13 @@ def main():
             print(f"Selected samples: {len(indices)} total ({_format_counts(selected_task_counts)})")
         else:
             print(f"Selected samples: {len(indices)}")
+        if skipped_empty_candidates:
+            print(
+                "Skipped candidate samples during selection: "
+                f"{skipped_empty_candidates} with no annotations after filtering"
+            )
+        if len(indices) < max_samples:
+            print(f"Requested samples: {max_samples}; valid samples available: {len(indices)}")
 
         seen_task_counts: Dict[str, int] = {}
         for j, idx0 in enumerate(indices):
@@ -182,7 +206,8 @@ def main():
 
             annotations = sample.get("annotations")
             if not isinstance(annotations, list) or not annotations:
-                print("  No standardized annotations available for this sample; skipping.")
+                reason = _empty_annotation_skip_reason(dataset_name, sample)
+                print(f"  Skipping sample: {reason}.")
                 continue
 
             if args.dry_run:
@@ -411,18 +436,36 @@ def _select_indices(
     max_samples: int,
     shuffle: bool,
     seed: int,
-) -> List[int]:
+) -> Tuple[List[int], int]:
     """Select sample indices from the dataset.
 
     Dataset-specific composition should already be handled by the dataloader.
     """
 
-    if shuffle and dataset_name == "dtld" and hasattr(dataset, "balanced_indices_by_scene"):
-        return dataset.balanced_indices_by_scene(
-            max_samples=min(len(dataset), max_samples),
-            shuffle=True,
-            seed=seed,
-        )
+    if dataset_name == "dtld":
+        if shuffle and hasattr(dataset, "balanced_indices_by_scene"):
+            candidate_indices = dataset.balanced_indices_by_scene(
+                max_samples=len(dataset),
+                shuffle=True,
+                seed=seed,
+            )
+        else:
+            candidate_indices = list(range(len(dataset)))
+
+        selected: List[int] = []
+        skipped_empty = 0
+        for i in candidate_indices:
+            try:
+                sample = dataset[i]
+            except (FileNotFoundError, OSError, SyntaxError):
+                continue
+            if _has_standardized_annotations(sample):
+                selected.append(i)
+                if len(selected) >= max_samples:
+                    break
+            else:
+                skipped_empty += 1
+        return selected, skipped_empty
 
     task_groups: Dict[str, List[int]] = {}
     for i in range(len(dataset)):
@@ -449,7 +492,7 @@ def _select_indices(
         if shuffle:
             rng = random.Random(seed)
             rng.shuffle(selected)
-        return selected
+        return selected, 0
 
     indices = list(range(len(dataset)))
     if shuffle:
@@ -457,7 +500,7 @@ def _select_indices(
 
         rng = random.Random(seed)
         rng.shuffle(indices)
-    return indices[: min(len(indices), max_samples)]
+    return indices[: min(len(indices), max_samples)], 0
 
 
 def _primary_task_counts(dataset, indices: Optional[List[int]] = None) -> Dict[str, int]:
