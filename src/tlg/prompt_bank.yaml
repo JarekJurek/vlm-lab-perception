@@ -1,66 +1,181 @@
 target_region_bbox_prompt:
-  question: "The target region is inside the red bounding box. Answer only about that boxed region and ignore all other regions.\n\n"
+  question: |
+    The target region is inside the red bounding box.
+    Answer only about the boxed region and ignore all other regions in the image.
+
 
 liquid_presence:
   task_type: "Liquid Presence Detection (binary)"
-  question: "Does the container contain any liquid? Answer with only 'YES' or 'NO'."
+  question: |
+    You are analyzing a laboratory image of a liquid container.
+
+    Your task is to determine whether any liquid is visibly present inside the container.
+    Count transparent, colored, or partially occluded liquid as present if a liquid region, meniscus, or fill boundary is visible.
+    Do not count reflections, container walls, printed labels, shadows, caps, or background objects as liquid.
+
+    Options: YES, NO.
+    Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
   choices: ["YES", "NO"]
 
 fill_percentage:
   task_type: "Fill-Level Estimation (continuous)"
-  question: "Estimate the liquid fill level as a percentage (0-100). Answer with only a number between 0 and 100."
+  question: |
+    You are analyzing a laboratory image of a liquid container.
+
+    Estimate what percentage of the container's usable height is filled with visible liquid.
+    Use the visible liquid surface, container bottom, and usable container height as reference points.
+    Treat 0 as empty and 100 as completely full. Ignore caps, labels, glare, shadows, perspective distortion, and background objects.
+
+    Output format: only one number between 0 and 100. Do not include a percent sign, units, explanation, or extra text.
+    Example outputs: 0, 25, 50, 75, 100.
 
 fill_level_ordinal:
   task_type: "Fill-Level Estimation (ordinal)"
-  question: "What is the fill level of liquid in this container? Choose exactly one: EMPTY, LOW, MID, HIGH, or FULL."
+  question: |
+    You are analyzing a laboratory image of a liquid container.
+
+    Your task is to classify the liquid fill level using one ordinal category.
+    Choose EMPTY when no liquid is visible, LOW for a small amount, MID for approximately half full, HIGH for mostly full, and FULL when the usable container volume appears completely or nearly completely filled.
+
+    Options: EMPTY, LOW, MID, HIGH, FULL.
+    Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
   choices: ["EMPTY", "LOW", "MID", "HIGH", "FULL"]
 
 container_type:
   task_type: "Container Type Recognition (classification)"
-  question: "Identify the liquid container type. Choose exactly one: Tube_50mL, Tube_15mL, Pyrex_100mL, StorageBottle_250mL, StorageBottle_500mL, Duran_500mL, Duran_250mL, Cell_Flask_160mL, Cell_Flask_400mL, Duran_100mL, Gibco_125mL, Gibco_500mL, T25 Flask, T75 Flask, T175 Flask, G-rex, or Tip."
+  question: |
+    You are analyzing a laboratory image of a liquid container.
+
+    Your task is to identify the specific container type shown in the image.
+    Base the decision on the container shape, cap style, neck, body geometry, volume markings, and overall proportions.
+
+    Options: Tube_50mL, Tube_15mL, Pyrex_100mL, StorageBottle_250mL, StorageBottle_500mL, Duran_500mL, Duran_250mL, Cell_Flask_160mL, Cell_Flask_400mL, Duran_100mL, Gibco_125mL, Gibco_500mL, T25 Flask, T75 Flask, T175 Flask, G-rex, Tip.
+    Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
   choices: ["Tube_50mL", "Tube_15mL", "Pyrex_100mL", "StorageBottle_250mL", "StorageBottle_500mL", "Duran_500mL", "Duran_250mL", "Cell_Flask_160mL", "Cell_Flask_400mL", "Duran_100mL", "Gibco_125mL", "Gibco_500mL", "T25 Flask", "T75 Flask", "T175 Flask", "G-rex", "Tip"]
 
 container_type_simple:
   task_type: "Container Type Recognition (classification, no volume)"
-  question: "Identify the liquid container type. Choose exactly one: Tube, Pyrex, StorageBottle, Duran, Flask, Gibco, G-rex, or Tip."
+  question: |
+    You are analyzing a laboratory image of a liquid container.
+
+    Your task is to identify the specific container type shown in the image.
+    Base the decision on the container shape, cap style, neck, body geometry, and overall labware appearance.
+
+    Options: Tube, Pyrex, StorageBottle, Duran, Flask, Gibco, G-rex, Tip.
+    Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
   choices: ["Tube", "Pyrex", "StorageBottle", "Duran", "Flask", "Gibco", "G-rex", "Tip"]
 
 container_count:
   task_type: "Container Counting (discrete)"
-  question: "How many liquid containers are visible in the image? Answer with only an integer (0 or greater)."
+  question: |
+    You are analyzing a laboratory image.
+
+    Your task is to count how many liquid containers are visible in the image.
+    Count lab containers that are designed to contain liquid.
+    Do not count caps alone, labels, stands, holders, instruments, hands, or background objects as containers.
+
+    Output format: only one integer 0 or greater. Do not include explanations, units, punctuation, or extra words.
+    Example outputs: 0, 1, 2, 3.
 
 fill_height_mm:
   task_type: "Fill-Level Estimation (height_mm)"
-  question: "Estimate liquid height in millimeters. Answer with only a number."
+  question: |
+    You are analyzing a laboratory image of a liquid container.
+
+    Your task is to estimate the vertical height of the visible liquid column in millimeters.
+    Measure from the lowest visible liquid boundary to the liquid surface or meniscus along the container's vertical direction.
+    Ignore caps, labels, glare, shadows, and background objects. If the liquid boundary is uncertain, provide your best visual estimate.
+
+    Output format: only one number in millimeters. Do not include units, explanation, punctuation, or extra text.
 
 liquid_color:
   task_type: "Liquid Color Recognition (classification)"
-  question: "What color is the liquid? Answer with a single color name."
+  question: |
+    You are analyzing a laboratory image of a liquid container.
+
+    Your task is to identify the color of the visible liquid.
+    Base the answer on the liquid region itself, not on container tint, labels, reflections, shadows, caps, or background objects.
+    If the liquid appears transparent or nearly colorless, answer with a simple color name such as clear.
+
+    Output format: only one concise color name. Do not include explanations, punctuation, or extra words.
 
 tip_presence:
   task_type: "Tip Presence Detection (binary)"
-  question: "Is there a pipette tip visible in the image? Answer with only 'YES' or 'NO'."
+  question: |
+    You are analyzing a laboratory image.
+
+    Your task is to determine whether there are any pipette tips present.
+    Count attached tips as present if the tip shape is visible.
+    Do not count tubes, caps, needles, bottles, labels, or other narrow lab objects as pipette tips unless they clearly match a pipette tip.
+
+    Options: YES, NO.
+    Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
   choices: ["YES", "NO"]
 
 liquid_grounding:
   task_type: "Liquid Visual Grounding (bbox)"
-  question: "Locate every Liquid region. Use coordinates normalized to the 0-1000 image scale. Return only valid JSON in this exact format: [{\"bbox_2d\":[x1,y1,x2,y2],\"label\":\"Liquid\"}]."
+  question: |
+    You are analyzing a laboratory image.
+
+    Your task is to locate every visible liquid region.
+    Draw each box around the visible liquid area only, not the entire container.
+    Include transparent, colored, or partially occluded liquid if a liquid region or meniscus is visible.
+    Do not include container walls, caps, labels, reflections, shadows, foam-only regions, or background objects.
+    Use coordinates normalized to the 0-1000 image scale in [x1, y1, x2, y2] format.
+    If no liquid is visible, return an empty JSON list.
+
+    Output format: only valid JSON in this exact schema:
+    [{"bbox_2d":[x1,y1,x2,y2],"label":"Liquid"}]
 
 highlighted_region_type:
   task_type: "Lab Region Type Recognition (classification)"
-  question: "What is the region inside the red bounding box? Choose exactly one: VESSEL, LIQUID, FOAM, GEL, SOLID, POWDER, GRANULAR, VAPOR, or BACKGROUND."
+  question: |
+    You are analyzing a laboratory image with a red bounding box marking one target region.
+
+    Your task is to classify the material or object type inside the boxed region.
+    Answer based only on the boxed region. Ignore all unboxed image content.
+    Choose VESSEL for container walls or labware, LIQUID for fluid regions, FOAM for bubbles or froth, GEL for gel-like material, SOLID for solid objects or chunks, POWDER for fine dry material, GRANULAR for visible grains or particles, VAPOR for mist or gas-like material, and BACKGROUND when the box contains none of these target lab materials.
+
+    Options: VESSEL, LIQUID, FOAM, GEL, SOLID, POWDER, GRANULAR, VAPOR, BACKGROUND.
+    Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
   choices: ["VESSEL", "LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR", "BACKGROUND"]
 
 material_types_present:
   task_type: "Material Type Presence (multi-label)"
-  question: "Which material types are present in the image? Choose all that apply from: LIQUID, FOAM, GEL, SOLID, POWDER, GRANULAR, VAPOR, NONE. Answer with only a comma-separated list."
+  question: |
+    You are analyzing a laboratory image.
+
+    Your task is to identify which material types are visibly present anywhere in the image.
+    Select all applicable material categories. Use NONE only when none of the listed material types are visible.
+    Do not include container walls, caps, printed labels, instruments, hands, shadows, or background objects unless they contain one of the listed material types.
+
+    Options: LIQUID, FOAM, GEL, SOLID, POWDER, GRANULAR, VAPOR, NONE.
+    Output format: only a comma-separated list of exact option texts. Do not include explanations, punctuation beyond commas, or extra words.
+    Example outputs: LIQUID; LIQUID, FOAM; NONE.
   choices: ["LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR", "NONE"]
 
 multiphase_material_presence:
   task_type: "Multi-Phase Material Presence Detection (binary)"
-  question: "Does the image contain a multi-phase material? Answer with only 'YES' or 'NO'."
+  question: |
+    You are analyzing a laboratory image.
+
+    Your task is to determine whether a visible material contains more than one phase or visibly distinct material state.
+    Answer YES when the image shows combinations such as liquid with foam, liquid with particles, liquid-solid mixtures, gel-liquid boundaries, sediment, bubbles, vapor, or other visibly separated phases.
+    Answer NO when only a single material phase is visible or no material phase can be confidently identified.
+
+    Options: YES, NO.
+    Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
   choices: ["YES", "NO"]
 
 pouring_frame_ordering:
   task_type: "Water Pouring Frame Ordering"
-  question: "The images are frames from the same water-pouring video, shown out of chronological order and labeled A, B, C, and optionally D. Put the frames in the order that creates a logical water-pouring sequence. Answer with only the image labels separated by commas, such as A, C, B."
+  question: |
+    You are analyzing labeled frames from the same laboratory water-pouring video.
+
+    Your task is to arrange the frames into the most plausible chronological order of the pouring action.
+    Use visual cues such as container tilt, stream formation, water level changes or splash state.
+    The frames are shown out of chronological order and first image is labeled A, second B, third C, and fourth D.
+
+    Output format: only the frame labels in chronological order, separated by commas.
+    Do not include explanations, numbering, punctuation beyond commas, or extra words.
+    Example output: A, C, B.
