@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from itertools import combinations
-from math import comb
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 
@@ -16,10 +15,15 @@ from .dataloader import PouringDataset
 
 _ORDER_LABELS = ("A", "B", "C", "D")
 _DEFAULT_MAX_ORDERING_SAMPLES_PER_VIDEO = 128
+_DEFAULT_MIN_ORDERING_FRAME_GAP = 4
 
 
 class PouringFrameOrderingDataset:
-    """Three- or four-frame ordering tasks for Pouring test videos."""
+    """Three- or four-frame ordering tasks for Pouring test videos.
+
+    ``min_ordering_frame_gap`` is measured in numeric rgb frame-index units.
+    For example, rgb_82 -> rgb_84 has gap 2, while rgb_82 -> rgb_92 has gap 10.
+    """
 
     def __init__(
         self,
@@ -28,6 +32,7 @@ class PouringFrameOrderingDataset:
         shuffle: bool = False,
         seed: Optional[int] = None,
         max_ordering_samples_per_video: int = _DEFAULT_MAX_ORDERING_SAMPLES_PER_VIDEO,
+        min_ordering_frame_gap: int = _DEFAULT_MIN_ORDERING_FRAME_GAP,
     ) -> None:
         self.root = Path(root)
         self.prompt_bank = prompt_bank or PromptBank.default()
@@ -36,6 +41,9 @@ class PouringFrameOrderingDataset:
         self.max_ordering_samples_per_video = int(max_ordering_samples_per_video)
         if self.max_ordering_samples_per_video <= 0:
             raise ValueError("max_ordering_samples_per_video must be positive")
+        self.min_ordering_frame_gap = int(min_ordering_frame_gap)
+        if self.min_ordering_frame_gap < 0:
+            raise ValueError("min_ordering_frame_gap must be non-negative")
         self._dataset = PouringDataset(root, splits=(self.split,), prompt_bank=self.prompt_bank)
 
         samples = self._build_samples()
@@ -96,6 +104,8 @@ class PouringFrameOrderingDataset:
             frame_count,
             max_samples=self.max_ordering_samples_per_video,
             seed=_stable_seed(self._seed, video_id),
+            frame_indices=[int(frame_info["frame_index"]) for frame_info in frame_infos],
+            min_frame_gap=self.min_ordering_frame_gap,
         ):
             self._append_ordering_sample(samples, video_id, frame_infos, chosen_indices)
 
@@ -140,6 +150,11 @@ class PouringFrameOrderingDataset:
                 "ordered_image_labels": display_labels,
                 "display_frame_indices": [frame["frame_index"] for frame in display_frames],
                 "chronological_frame_indices": [frame["frame_index"] for frame in chronological_frames],
+                "chronological_frame_gaps": [
+                    b["frame_index"] - a["frame_index"]
+                    for a, b in zip(chronological_frames, chronological_frames[1:])
+                ],
+                "min_ordering_frame_gap": self.min_ordering_frame_gap,
                 "answer_order_labels": answer_labels,
                 "label": answer,
                 "annotations": annotations,
@@ -225,17 +240,41 @@ def _sample_frame_combinations(
     *,
     max_samples: int,
     seed: int,
+    frame_indices: Optional[Sequence[int]] = None,
+    min_frame_gap: int = 0,
 ) -> List[Tuple[int, ...]]:
-    total = comb(n_frames, frame_count)
+    min_frame_gap = int(min_frame_gap)
+    if min_frame_gap < 0:
+        raise ValueError("min_frame_gap must be non-negative")
+    if frame_indices is not None and len(frame_indices) != n_frames:
+        raise ValueError("frame_indices length must match n_frames")
+
+    combos = list(combinations(range(n_frames), frame_count))
+    if frame_indices is not None and min_frame_gap > 0:
+        combos = [
+            combo
+            for combo in combos
+            if _has_min_frame_gap(combo, frame_indices, min_frame_gap)
+        ]
+
+    total = len(combos)
     if total <= max_samples:
-        return list(combinations(range(n_frames), frame_count))
+        return combos
 
     rng = np.random.default_rng(seed)
     selected = set()
     while len(selected) < max_samples:
-        combo = tuple(sorted(int(i) for i in rng.choice(n_frames, size=frame_count, replace=False)))
-        selected.add(combo)
+        combo_idx = int(rng.integers(total))
+        selected.add(combos[combo_idx])
     return sorted(selected)
+
+
+def _has_min_frame_gap(combo: Sequence[int], frame_indices: Sequence[int], min_frame_gap: int) -> bool:
+    chosen_frame_indices = [int(frame_indices[i]) for i in combo]
+    return all(
+        b - a >= min_frame_gap
+        for a, b in zip(chosen_frame_indices, chosen_frame_indices[1:])
+    )
 
 
 def _stable_seed(seed: Optional[int], video_id: str) -> int:

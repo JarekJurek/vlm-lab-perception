@@ -47,11 +47,56 @@ class PouringFrameOrderingTest(unittest.TestCase):
                 prompt_bank=PromptBank.default(),
                 seed=7,
                 max_ordering_samples_per_video=6,
+                min_ordering_frame_gap=0,
             )
             ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
 
             self.assertEqual(len(ordering_samples), 6)
             self.assertEqual(len({sample["id"] for sample in ordering_samples}), 6)
+
+    def test_min_ordering_frame_gap_filters_close_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 2, 4, 10, 20, 30])
+
+            dataset = PouringFrameOrderingDataset(
+                root,
+                prompt_bank=PromptBank.default(),
+                seed=7,
+                min_ordering_frame_gap=10,
+            )
+            ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
+
+            self.assertEqual(len(ordering_samples), 1)
+            sample = ordering_samples[0]
+            self.assertEqual(sample["chronological_frame_indices"], [0, 10, 20, 30])
+            self.assertEqual(sample["chronological_frame_gaps"], [10, 10, 10])
+            self.assertEqual(sample["min_ordering_frame_gap"], 10)
+
+    def test_default_min_ordering_frame_gap_skips_adjacent_saved_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 2, 4, 6, 8, 10, 12])
+
+            dataset = PouringFrameOrderingDataset(root, prompt_bank=PromptBank.default(), seed=7)
+            ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
+
+            self.assertTrue(ordering_samples)
+            for sample in ordering_samples:
+                self.assertGreaterEqual(min(sample["chronological_frame_gaps"]), 4)
+                self.assertEqual(sample["min_ordering_frame_gap"], 4)
+
+    def test_min_ordering_frame_gap_can_return_no_ordering_samples(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 2, 4, 6])
+
+            dataset = PouringFrameOrderingDataset(
+                root,
+                prompt_bank=PromptBank.default(),
+                seed=7,
+                min_ordering_frame_gap=10,
+            )
+            ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
+
+            self.assertEqual(ordering_samples, [])
 
     def test_qwen_runner_passes_ordered_frames_as_multiple_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
