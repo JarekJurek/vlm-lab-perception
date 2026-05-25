@@ -12,7 +12,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
 from tlg.target_overlay import make_target_box_overlay, should_mark_target_box
 from tlg.annotations import TLGAnnotation
-from tlg import model_runner
+from tlg import PromptBank, model_runner
 
 
 class DTLDImageRoutingTest(unittest.TestCase):
@@ -58,10 +58,12 @@ class DTLDImageRoutingTest(unittest.TestCase):
                 ),
             ]
             captured_pixels = {}
+            captured_prompts = {}
             original_run_task = model_runner.run_task
 
-            def fake_run_task(_model, _processor, image, _prompt, **kwargs):
+            def fake_run_task(_model, _processor, image, prompt, **kwargs):
                 captured_pixels[kwargs["task_name"]] = image.getpixel((5, 5))
+                captured_prompts[kwargs["task_name"]] = prompt
                 return "ok"
 
             try:
@@ -81,6 +83,10 @@ class DTLDImageRoutingTest(unittest.TestCase):
 
             self.assertEqual(captured_pixels["container_count"], (255, 255, 255))
             self.assertEqual(captured_pixels["container_type"], (255, 0, 0))
+            self.assertFalse(captured_prompts["container_count"].startswith("The target region"))
+            self.assertTrue(
+                captured_prompts["container_type"].startswith(PromptBank.default().target_region_bbox_prompt())
+            )
 
 
 if __name__ == "__main__":

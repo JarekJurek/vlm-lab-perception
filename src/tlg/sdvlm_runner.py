@@ -528,7 +528,7 @@ def build_sdvlm_task_inputs(
         target_box_image = make_target_box_overlay(rgb_image, rgb_image, bbox=bbox)
 
     out: List[SDVLMTaskInput] = []
-    target_region_prompt = PromptBank.default().target_region_bbox_prompt()
+    prompt_bank = PromptBank.default()
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         region_box_image = _make_annotation_box_image(rgb_image, ann)
@@ -559,9 +559,13 @@ def build_sdvlm_task_inputs(
                     task_image=task_image,
                 )
         if use_region_box:
-            prompt = target_region_prompt + prompt
+            target_region_prompt = prompt_bank.task_prompt_prefix(dataset_name, task_name)
+            target_region_prompt = target_region_prompt or prompt_bank.target_region_bbox_prompt()
+            prompt = f"{target_region_prompt.rstrip()}\n\n{prompt}"
         elif use_target_box:
-            prompt = target_region_prompt + prompt
+            target_region_prompt = prompt_bank.task_prompt_prefix(dataset_name, task_name)
+            target_region_prompt = target_region_prompt or prompt_bank.target_region_bbox_prompt()
+            prompt = f"{target_region_prompt.rstrip()}\n\n{prompt}"
         if comparison_image is not None:
             task_image = make_side_by_side_image(task_image, comparison_image)
             prompt = (

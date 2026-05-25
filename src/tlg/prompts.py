@@ -21,6 +21,7 @@ class PromptSpec(TypedDict):
 class DatasetPromptAssignment(TypedDict):
     include: List[str]
     overrides: NotRequired[Dict[str, str]]
+    task_prompt_prefixes: NotRequired[Dict[str, List[str]]]
 
 
 PromptDefsDict = Mapping[str, PromptSpec]
@@ -99,11 +100,42 @@ class PromptBank:
     def target_region_bbox_prompt(self) -> str:
         """Return the shared prompt prefix for red-box target-region tasks."""
 
+        return self.prompt_prefix("target_region_bbox_prompt")
+
+    def prompt_prefix(self, prompt_id: str) -> str:
+        """Return a reusable prompt prefix by prompt id."""
+
+        prompt_id = str(prompt_id)
         try:
-            spec = self.prompt_defs["target_region_bbox_prompt"]
+            spec = self.prompt_defs[prompt_id]
         except KeyError as e:
-            raise KeyError("Missing prompt definition: 'target_region_bbox_prompt'") from e
+            raise KeyError(f"Missing prompt prefix definition: {prompt_id!r}") from e
         return str(spec["question"])
+
+    def task_prompt_prefix(self, dataset: str, task: str) -> str:
+        """Return prompt text prepended to a specific dataset task."""
+
+        prefix_ids = self.task_prompt_prefix_ids(dataset, task)
+        parts: List[str] = []
+        for prompt_id in prefix_ids:
+            try:
+                parts.append(self.prompt_prefix(str(prompt_id)).rstrip())
+            except KeyError as e:
+                raise KeyError(
+                    f"Unknown task prompt prefix referenced by dataset assignments: {prompt_id!r} "
+                    f"(dataset={dataset!r}, task={task!r})"
+                ) from e
+        return "\n\n".join(p for p in parts if p.strip())
+
+    def task_prompt_prefix_ids(self, dataset: str, task: str) -> List[str]:
+        """Return prompt prefix ids configured for a specific dataset task."""
+
+        assignment = self.dataset_assignments.get(str(dataset))
+        if not assignment:
+            return []
+
+        task_prefixes = assignment.get("task_prompt_prefixes", {})
+        return list(task_prefixes.get(str(task), []))
 
     @staticmethod
     def default_path() -> Path:
@@ -191,7 +223,7 @@ def _load_dataset_assignments_yaml(path: Path) -> Dict[str, DatasetPromptAssignm
 
     Supported YAML shapes per dataset:
     - list[str]: interpreted as {include: [...]}
-    - mapping: {include: [...], overrides: {task: prompt_id}}
+    - mapping: {include: [...], overrides: {task: prompt_id}, task_prompt_prefixes: {...}}
     """
 
     yaml = _require_yaml()
@@ -210,6 +242,7 @@ def _load_dataset_assignments_yaml(path: Path) -> Dict[str, DatasetPromptAssignm
 
         include: List[str] = []
         overrides: Dict[str, str] = {}
+        task_prompt_prefixes: Dict[str, List[str]] = {}
 
         if isinstance(cfg, list):
             if not all(isinstance(x, str) for x in cfg):
@@ -227,6 +260,23 @@ def _load_dataset_assignments_yaml(path: Path) -> Dict[str, DatasetPromptAssignm
             if not isinstance(ov, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in ov.items()):
                 raise ValueError(f"Dataset {dataset!r} overrides must be dict[str,str] in {path}")
             overrides = {str(k): str(v) for k, v in ov.items()}
+
+            task_prefixes = cfg.get("task_prompt_prefixes", {})
+            if task_prefixes is None:
+                task_prefixes = {}
+            if not isinstance(task_prefixes, dict):
+                raise ValueError(f"Dataset {dataset!r} task_prompt_prefixes must be a mapping in {path}")
+            for task, prefix_list in task_prefixes.items():
+                if not isinstance(task, str):
+                    raise ValueError(f"Dataset {dataset!r} task_prompt_prefixes keys must be strings in {path}")
+                if isinstance(prefix_list, str):
+                    task_prompt_prefixes[str(task)] = [str(prefix_list)]
+                elif isinstance(prefix_list, list) and all(isinstance(x, str) for x in prefix_list):
+                    task_prompt_prefixes[str(task)] = [str(x) for x in prefix_list]
+                else:
+                    raise ValueError(
+                        f"Dataset {dataset!r} task_prompt_prefixes[{task!r}] must be str or list[str] in {path}"
+                    )
         else:
             raise ValueError(
                 f"Dataset {dataset!r} assignments must be a list[str] or mapping in {path}; got {type(cfg).__name__}"
@@ -235,9 +285,15 @@ def _load_dataset_assignments_yaml(path: Path) -> Dict[str, DatasetPromptAssignm
         # Normalize/validate.
         include_norm = sorted({s.strip() for s in include if str(s).strip()})
         overrides_norm = {k.strip(): v.strip() for k, v in overrides.items() if k.strip() and v.strip()}
+        task_prompt_prefixes_norm = {
+            k.strip(): [v.strip() for v in values if v.strip()]
+            for k, values in task_prompt_prefixes.items()
+            if k.strip()
+        }
         out[dataset] = {"include": include_norm}
         if overrides_norm:
             out[dataset]["overrides"] = overrides_norm
+        if task_prompt_prefixes_norm:
+            out[dataset]["task_prompt_prefixes"] = task_prompt_prefixes_norm
 
     return out
-

@@ -87,12 +87,16 @@ def make_tlg_annotation(
     spec = prompt_bank.get(str(dataset), str(task))
     md: Dict[str, Any] = dict(metadata or {})
     md["task"] = str(task)
+    question = str(spec["question"])
+    prefix = prompt_bank.task_prompt_prefix(str(dataset), str(task))
+    if prefix and "target_region_bbox_prompt" not in prompt_bank.task_prompt_prefix_ids(str(dataset), str(task)):
+        question = f"{prefix.rstrip()}\n\n{question}"
 
     return TLGAnnotation(
         image_id=str(image_id),
         dataset=str(dataset),
         task_type=str(spec.get("task_type", task)),
-        question=str(spec["question"]),
+        question=question,
         choices=spec.get("choices"),
         answer=answer,
         metadata=md,
