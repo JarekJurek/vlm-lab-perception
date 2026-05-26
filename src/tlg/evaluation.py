@@ -218,6 +218,15 @@ def parse_material_types(text: object) -> Optional[str]:
     return ", ".join(label for label in _MATERIAL_TYPE_CHOICES if label in set(hits))
 
 
+def _material_type_set(text: object) -> Optional[set[str]]:
+    parsed = parse_material_types(text)
+    if parsed is None:
+        return None
+    if parsed == "NONE":
+        return set()
+    return {label.strip() for label in parsed.split(",") if label.strip()}
+
+
 def parse_frame_order_labels(text: object) -> Optional[str]:
     labels = re.findall(r"\b[A-D]\b", norm_text(text).upper())
     if len(labels) not in (3, 4):
@@ -275,6 +284,42 @@ def _score_frame_ordering(pred: object, gt: object) -> Dict[str, object]:
         "pairwise_total": total,
         "pairwise_accuracy": pairwise_accuracy,
         "kendall_tau": kendall_tau,
+    }
+
+
+def _score_material_types(pred: object, gt: object) -> Dict[str, object]:
+    pred_set = _material_type_set(pred)
+    gt_set = _material_type_set(gt)
+    if pred_set is None or gt_set is None:
+        return {"correct": None}
+
+    n_overlap = len(pred_set & gt_set)
+    exact_match = pred_set == gt_set
+    sample_precision = (
+        float(n_overlap) / float(len(pred_set))
+        if pred_set
+        else (1.0 if not gt_set else 0.0)
+    )
+    sample_recall = (
+        float(n_overlap) / float(len(gt_set))
+        if gt_set
+        else (1.0 if not pred_set else 0.0)
+    )
+    sample_f1 = (
+        2.0 * sample_precision * sample_recall / (sample_precision + sample_recall)
+        if (sample_precision + sample_recall)
+        else 0.0
+    )
+
+    return {
+        "correct": exact_match,
+        "exact_match": exact_match,
+        "n_gt_labels": len(gt_set),
+        "n_pred_labels": len(pred_set),
+        "n_matched_labels": n_overlap,
+        "sample_precision": sample_precision,
+        "sample_recall": sample_recall,
+        "sample_f1": sample_f1,
     }
 
 
@@ -615,6 +660,10 @@ def score_prediction(
         record.update(_score_grounding(pred, gt))
         return record
 
+    if task == "material_types_present":
+        record.update(_score_material_types(pred, gt))
+        return record
+
     record["correct"] = labels_equal(task, pred, gt)
     if task == "pouring_frame_ordering":
         record.update(_score_frame_ordering(pred, gt))
@@ -638,6 +687,12 @@ class TaskStats:
     position_total: int = 0
     pairwise_correct: int = 0
     pairwise_total: int = 0
+    exact_match_sum: int = 0
+    n_exact_match: int = 0
+    sample_precision_sum: float = 0.0
+    sample_recall_sum: float = 0.0
+    sample_f1_sum: float = 0.0
+    n_sample_set: int = 0
 
     def update_from_record(self, rec: Dict[str, object]) -> None:
         self.n += 1
@@ -654,6 +709,23 @@ class TaskStats:
             self.n_abs_error += 1
         if rec.get("within_tol") is True:
             self.n_within_tol += 1
+
+        if rec.get("task") == "material_types_present" and "sample_precision" not in rec:
+            rec = {**rec, **_score_material_types(rec.get("pred"), rec.get("gt"))}
+
+        exact_match = rec.get("exact_match")
+        if isinstance(exact_match, bool):
+            self.exact_match_sum += int(exact_match)
+            self.n_exact_match += 1
+
+        sample_precision = rec.get("sample_precision")
+        sample_recall = rec.get("sample_recall")
+        sample_f1 = rec.get("sample_f1")
+        if all(isinstance(v, (int, float)) for v in (sample_precision, sample_recall, sample_f1)):
+            self.sample_precision_sum += float(sample_precision)
+            self.sample_recall_sum += float(sample_recall)
+            self.sample_f1_sum += float(sample_f1)
+            self.n_sample_set += 1
 
         precision = rec.get("precision")
         recall = rec.get("recall")
@@ -691,6 +763,12 @@ class TaskStats:
             out["mae"] = float(self.abs_error_sum) / float(self.n_abs_error)
         if self.n_abs_error > 0 or self.n_within_tol > 0:
             out["within_tol"] = float(self.n_within_tol) / float(self.n_valid) if self.n_valid else None
+        if self.n_exact_match > 0:
+            out["exact_match"] = float(self.exact_match_sum) / float(self.n_exact_match)
+        if self.n_sample_set > 0:
+            out["sample_precision"] = self.sample_precision_sum / float(self.n_sample_set)
+            out["sample_recall"] = self.sample_recall_sum / float(self.n_sample_set)
+            out["sample_f1"] = self.sample_f1_sum / float(self.n_sample_set)
         if self.n_grounding > 0:
             out["precision"] = self.precision_sum / float(self.n_grounding)
             out["recall"] = self.recall_sum / float(self.n_grounding)

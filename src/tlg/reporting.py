@@ -65,6 +65,10 @@ def print_stats(title: str, stats: Dict[str, TaskStats]) -> None:
         n_valid = d.get("n_valid", 0)
         n = d.get("n", 0)
         acc = d.get("accuracy")
+        exact_match = d.get("exact_match")
+        sample_precision = d.get("sample_precision")
+        sample_recall = d.get("sample_recall")
+        sample_f1 = d.get("sample_f1")
         mae = d.get("mae")
         within = d.get("within_tol")
         precision = d.get("precision")
@@ -75,6 +79,14 @@ def print_stats(title: str, stats: Dict[str, TaskStats]) -> None:
         parts = [f"n={n}", f"valid={n_valid}"]
         if isinstance(acc, float):
             parts.append(f"acc={acc:.3f}")
+        if isinstance(exact_match, float):
+            parts.append(f"exact_match={exact_match:.3f}")
+        if isinstance(sample_precision, float):
+            parts.append(f"sample_precision={sample_precision:.3f}")
+        if isinstance(sample_recall, float):
+            parts.append(f"sample_recall={sample_recall:.3f}")
+        if isinstance(sample_f1, float):
+            parts.append(f"sample_f1={sample_f1:.3f}")
         if isinstance(mae, float):
             parts.append(f"mae={mae:.3f}")
         if isinstance(within, float):
