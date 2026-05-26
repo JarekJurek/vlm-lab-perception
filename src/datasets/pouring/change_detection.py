@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from itertools import combinations
+from itertools import combinations, permutations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 
@@ -86,28 +86,43 @@ class PouringFrameOrderingDataset:
         if not has_frame_ordering:
             return samples
 
+        ordering_items: List[Tuple[str, Sequence[Dict[str, Any]], Tuple[int, ...]]] = []
         for video_id, frame_infos in sorted(frames_by_video.items()):
             frame_infos = sorted(frame_infos, key=lambda item: item["frame_index"])
             if len(frame_infos) >= 3:
-                self._append_ordering_samples(samples, video_id, frame_infos)
-        return samples
+                frame_count = 4 if len(frame_infos) >= 4 else 3
+                for chosen_indices in _sample_frame_combinations(
+                    len(frame_infos),
+                    frame_count,
+                    max_samples=self.max_ordering_samples_per_video,
+                    seed=_stable_seed(self._seed, video_id),
+                    frame_indices=[int(frame_info["frame_index"]) for frame_info in frame_infos],
+                    min_frame_gap=self.min_ordering_frame_gap,
+                ):
+                    ordering_items.append((video_id, frame_infos, chosen_indices))
 
-    def _append_ordering_samples(
-        self,
-        samples: List[Dict[str, Any]],
-        video_id: str,
-        frame_infos: Sequence[Dict[str, Any]],
-    ) -> None:
-        frame_count = 4 if len(frame_infos) >= 4 else 3
-        for chosen_indices in _sample_frame_combinations(
-            len(frame_infos),
-            frame_count,
-            max_samples=self.max_ordering_samples_per_video,
-            seed=_stable_seed(self._seed, video_id),
-            frame_indices=[int(frame_info["frame_index"]) for frame_info in frame_infos],
-            min_frame_gap=self.min_ordering_frame_gap,
-        ):
-            self._append_ordering_sample(samples, video_id, frame_infos, chosen_indices)
+        display_orders_by_frame_count: Dict[int, List[Tuple[int, ...]]] = {}
+        for frame_count in sorted({len(chosen_indices) for _, _, chosen_indices in ordering_items}):
+            n_items = sum(1 for _, _, chosen_indices in ordering_items if len(chosen_indices) == frame_count)
+            display_orders_by_frame_count[frame_count] = _balanced_display_orders(
+                frame_count,
+                n_items,
+                seed=_stable_seed(self._seed, f"display-orders:{frame_count}:{n_items}"),
+            )
+        display_order_offsets: Dict[int, int] = defaultdict(int)
+
+        for video_id, frame_infos, chosen_indices in ordering_items:
+            frame_count = len(chosen_indices)
+            offset = display_order_offsets[frame_count]
+            display_order_offsets[frame_count] += 1
+            self._append_ordering_sample(
+                samples,
+                video_id,
+                frame_infos,
+                chosen_indices,
+                display_orders_by_frame_count[frame_count][offset],
+            )
+        return samples
 
     def _append_ordering_sample(
         self,
@@ -115,15 +130,10 @@ class PouringFrameOrderingDataset:
         video_id: str,
         frame_infos: Sequence[Dict[str, Any]],
         chosen_indices: Sequence[int],
+        display_order: Sequence[int],
     ) -> None:
         chronological_frames = [frame_infos[i] for i in chosen_indices]
         frame_count = len(chronological_frames)
-
-        combo_key = "__".join(str(frame["frame_index"]) for frame in chronological_frames)
-        rng = np.random.default_rng(_stable_seed(self._seed, f"{video_id}:{combo_key}"))
-        display_order = rng.permutation(frame_count).tolist()
-        if display_order == list(range(frame_count)):
-            display_order = list(reversed(display_order))
 
         display_frames = [chronological_frames[i] for i in display_order]
         display_labels = list(_ORDER_LABELS[:frame_count])
@@ -275,6 +285,19 @@ def _has_min_frame_gap(combo: Sequence[int], frame_indices: Sequence[int], min_f
         b - a >= min_frame_gap
         for a, b in zip(chosen_frame_indices, chosen_frame_indices[1:])
     )
+
+
+def _balanced_display_orders(frame_count: int, n_orders: int, *, seed: int) -> List[Tuple[int, ...]]:
+    if n_orders <= 0:
+        return []
+
+    all_orders = list(permutations(range(frame_count)))
+    repeats, remainder = divmod(n_orders, len(all_orders))
+
+    rng = np.random.default_rng(seed)
+    shuffled_orders = [all_orders[i] for i in rng.permutation(len(all_orders))]
+    display_orders = all_orders * repeats + shuffled_orders[:remainder]
+    return [display_orders[i] for i in rng.permutation(len(display_orders))]
 
 
 def _stable_seed(seed: Optional[int], video_id: str) -> int:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import sys
 import tempfile
 import unittest
@@ -33,7 +34,7 @@ class PouringFrameOrderingTest(unittest.TestCase):
             self.assertEqual(sample["ordered_image_labels"], ["A", "B", "C", "D"])
             self.assertEqual(sample["chronological_frame_indices"], [0, 10, 20, 30])
             self.assertEqual(sample["ordering_frame_positions"], [0, 1, 2, 3])
-            self.assertNotEqual(sample["display_frame_indices"], sample["chronological_frame_indices"])
+            self.assertEqual(sorted(sample["display_frame_indices"]), sample["chronological_frame_indices"])
             self.assertEqual(ann.metadata["task"], "pouring_frame_ordering")
             self.assertEqual(ann.answer, sample["label"])
             self.assertEqual(set(ann.answer.replace(",", "").split()), {"A", "B", "C", "D"})
@@ -53,6 +54,24 @@ class PouringFrameOrderingTest(unittest.TestCase):
 
             self.assertEqual(len(ordering_samples), 6)
             self.assertEqual(len({sample["id"] for sample in ordering_samples}), 6)
+
+    def test_balances_display_permutations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=list(range(11)))
+
+            dataset = PouringFrameOrderingDataset(
+                root,
+                prompt_bank=PromptBank.default(),
+                seed=7,
+                max_ordering_samples_per_video=48,
+                min_ordering_frame_gap=0,
+            )
+            ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
+            answers = Counter("".join(sample["answer_order_labels"]) for sample in ordering_samples)
+
+            self.assertEqual(len(ordering_samples), 48)
+            self.assertEqual(len(answers), 24)
+            self.assertEqual(set(answers.values()), {2})
 
     def test_min_ordering_frame_gap_filters_close_frames(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
