@@ -4,7 +4,8 @@
 # default prompt_id (prompt_id == task).
 #
 # If a dataset needs dataset-specific wording or constrained choices for a task,
-# use the mapping form with an `overrides` block.
+# use the mapping form with an `overrides` block. If a task needs an additional
+# reusable instruction prefix, add it under `task_prompt_prefixes`.
 
 labliquidvision:
   - liquid_presence
@@ -19,11 +20,21 @@ glasses:
   - liquid_presence
 
 dtld:
-  - container_count
-  - container_type
-  - container_type_simple
-  - fill_height_mm
-  - liquid_presence
+  include:
+    - container_count
+    - container_type
+    - container_type_simple
+    - fill_height_mm
+    - liquid_presence
+  task_prompt_prefixes:
+    container_type:
+      - target_region_bbox_prompt
+    container_type_simple:
+      - target_region_bbox_prompt
+    fill_height_mm:
+      - target_region_bbox_prompt
+    liquid_presence:
+      - target_region_bbox_prompt
 
 labpicsv1:
   - highlighted_region_type
@@ -31,13 +42,23 @@ labpicsv1:
   - multiphase_material_presence
 
 ot2:
-  - liquid_grounding
-  - fill_percentage
-  - tip_presence
-  - liquid_presence
-  - container_count
-  - container_type
-  - container_type_simple
+  include:
+    - liquid_grounding
+    - fill_percentage
+    - tip_presence
+    - liquid_presence
+    - container_count
+    - container_type
+    - container_type_simple
+  task_prompt_prefixes:
+    fill_percentage:
+      - pipette_tip_group_context_prompt
+    liquid_presence:
+      - pipette_tip_group_context_prompt
+    container_type:
+      - pipette_tip_group_context_prompt
+    container_type_simple:
+      - pipette_tip_group_context_prompt
 
 pouring:
   - liquid_presence

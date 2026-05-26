@@ -4,6 +4,14 @@ target_region_bbox_prompt:
     Answer only about the boxed region and ignore all other regions in the image.
 
 
+pipette_tip_group_context_prompt:
+  question: |
+    The image may contain multiple pipette tips arranged together.
+    Interpret singular container wording as referring to the visible tips as a group.
+    For fill level, report the common or typical fill percentage across the visible tips.
+    For liquid presence, answer YES if liquid is visible in any visible tip.
+
+
 liquid_presence:
   task_type: "Liquid Presence Detection (binary)"
   question: |
