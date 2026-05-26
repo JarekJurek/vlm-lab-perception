@@ -112,9 +112,10 @@ tip_presence:
   question: |
     You are analyzing a laboratory image.
 
-    Your task is to determine whether there are any pipette tips present.
-    Count attached tips as present if the tip shape is visible.
-    Do not count tubes, caps, needles, bottles, labels, or other narrow lab objects as pipette tips unless they clearly match a pipette tip.
+    Your task is to determine whether any pipette tips are visibly present.
+    Answer YES only if you can see one or more pipette tips, such as narrow tapered plastic tips attached to pipette channels or arranged in a row.
+    Answer NO if no pipette tip shape is visible, even if the image contains a robot deck, labware holders, wells, tubes, liquids, shadows, reflections, or other lab equipment.
+    Do not infer that tips are present from the experiment context; base the answer only on visible tip shapes.
 
     Options: YES, NO.
     Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
