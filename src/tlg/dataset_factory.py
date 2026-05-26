@@ -31,6 +31,7 @@ def build_dataset(
     shuffle: bool = False,
     seed: Optional[int] = None,
     debug_dtld_boxes: bool = False,
+    dtld_no_occlusion_filter: bool = False,
 ) -> Any:
     """Construct a dataset instance for a given dataset name.
 
@@ -51,6 +52,12 @@ def build_dataset(
     if dataset_name == "glasses":
         return GlassesInTheWildDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "dtld":
+        dtld_kwargs = {}
+        if dtld_no_occlusion_filter:
+            dtld_kwargs = {
+                "skip_occluded_target_questions": False,
+                "occluded_bbox_overlap_threshold": 2.0,
+            }
         return DTLDDataset(
             data_root,
             rgb_only=True,
@@ -58,6 +65,7 @@ def build_dataset(
             shuffle=shuffle,
             seed=seed,
             debug_boxes=debug_dtld_boxes,
+            **dtld_kwargs,
         )
     if dataset_name == "labpicsv1":
         return LabPicsV1Dataset(data_root, split="train", prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)

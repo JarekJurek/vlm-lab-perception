@@ -142,6 +142,7 @@ def main():
             shuffle=args.shuffle,
             seed=int(args.seed),
             debug_dtld_boxes=debug_dtld_boxes,
+            dtld_no_occlusion_filter=bool(args.dtld_no_occlusion_filter),
         )
         print(f"Dataset size: {len(dataset)}")
         task_pool_counts = _primary_task_counts(dataset)

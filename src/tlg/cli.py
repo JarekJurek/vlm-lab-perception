@@ -112,6 +112,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--dtld-no-occlusion-filter",
+        action="store_true",
+        help="Disable DTLD occlusion filtering for target-object and container-count tasks.",
+    )
+    parser.add_argument(
         "--tol",
         action="append",
         default=[],
