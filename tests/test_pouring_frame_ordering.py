@@ -107,7 +107,9 @@ class PouringFrameOrderingTest(unittest.TestCase):
             original_run_task = model_runner.run_task
 
             def fake_run_task(_model, _processor, image, prompt, **kwargs):
-                captured["primary_pixel"] = image.getpixel((0, 0))
+                captured["primary_header_pixel"] = image.getpixel((0, 0))
+                captured["primary_frame_pixel"] = image.getpixel((0, image.height - 1))
+                captured["primary_size"] = image.size
                 captured["extra_count"] = len(kwargs.get("extra_images") or [])
                 captured["prompt"] = prompt
                 return "ok"
@@ -128,7 +130,9 @@ class PouringFrameOrderingTest(unittest.TestCase):
                 model_runner.run_task = original_run_task
 
             first_display_index = sample["display_frame_indices"][0]
-            self.assertTrue(_colors_close(captured["primary_pixel"], _color_for_frame(first_display_index)))
+            self.assertEqual(captured["primary_header_pixel"], (0, 0, 0))
+            self.assertGreater(captured["primary_size"][1], 8)
+            self.assertTrue(_colors_close(captured["primary_frame_pixel"], _color_for_frame(first_display_index)))
             self.assertEqual(captured["extra_count"], 2)
             self.assertIn("A, B, C", captured["prompt"])
 
