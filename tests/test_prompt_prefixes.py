@@ -61,6 +61,7 @@ example:
         self.assertIn("multiple pipette tips", prefix)
         self.assertNotIn("OT2", prefix)
         self.assertNotIn("ot2", prefix.lower())
+        self.assertEqual(bank.task_prompt_prefix("ot2", "fill_level_ordinal"), prefix)
         self.assertEqual(bank.task_prompt_prefix("ot2", "liquid_grounding"), "")
         self.assertEqual(bank.task_prompt_prefix("ot2", "container_count"), "")
 

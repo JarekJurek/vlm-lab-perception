@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Union, cast
 import numpy as np
 
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
+from tlg.annotations import discretize_fill_level_ordinal
 
 
 class GlassesInTheWildDataset:
@@ -111,6 +112,14 @@ class GlassesInTheWildDataset:
                     add(
                         task="fill_percentage",
                         answer=round(fill_clamped, 1),
+                        metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+                    )
+                )
+            if self._prompt_bank.supports(dataset, "fill_level_ordinal"):
+                annotations.append(
+                    add(
+                        task="fill_level_ordinal",
+                        answer=discretize_fill_level_ordinal(fill_clamped),
                         metadata={"derived_fill_percentage": round(fill_clamped, 6)},
                     )
                 )

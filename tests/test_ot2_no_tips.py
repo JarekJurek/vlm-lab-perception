@@ -16,6 +16,26 @@ def _task_names(sample: dict[str, object]) -> list[str]:
 
 
 class OT2NoTipsTest(unittest.TestCase):
+    def test_labeled_images_emit_fill_level_ordinal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            labeled_dir = root / "Training Data" / "Images_with_Labels_tips_n_Liquid"
+            labeled_dir.mkdir(parents=True)
+
+            (labeled_dir / "Tips_0.jpg").touch()
+            (labeled_dir / "Tips_0.txt").write_text(
+                "0 0.5 0.5 0.2 0.4\n1 0.5 0.5 0.1 0.2\n",
+                encoding="utf-8",
+            )
+
+            dataset = OT2Dataset(root)
+            sample = dataset[0]
+            tasks = _task_names(sample)
+
+            self.assertIn("fill_level_ordinal", tasks)
+            ordinal_ann = sample["annotations"][tasks.index("fill_level_ordinal")]
+            self.assertEqual(ordinal_ann.answer, "MID")
+
     def test_no_tips_images_emit_only_tip_presence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

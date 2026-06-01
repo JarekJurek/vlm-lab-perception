@@ -17,6 +17,7 @@ labliquidvision:
 
 glasses:
   - fill_percentage
+  - fill_level_ordinal
   - liquid_presence
 
 dtld:
@@ -45,6 +46,7 @@ ot2:
   include:
     - liquid_grounding
     - fill_percentage
+    - fill_level_ordinal
     - tip_presence
     - liquid_presence
     - container_count
@@ -59,7 +61,8 @@ ot2:
       - pipette_tip_group_context_prompt
     container_type_simple:
       - pipette_tip_group_context_prompt
-
+    fill_level_ordinal:
+      - pipette_tip_group_context_prompt
 pouring:
   - liquid_presence
   - pouring_frame_ordering

@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation, simplify_container_type
+from tlg.annotations import discretize_fill_level_ordinal
 
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png"}
@@ -376,6 +377,15 @@ class OT2Dataset:
                 add(
                     task="fill_percentage",
                     answer=float(fill_percentage),
+                    metadata={"unit": "percent_of_tip_height"},
+                )
+            )
+
+        if self._prompt_bank.supports(dataset, "fill_level_ordinal"):
+            annotations.append(
+                add(
+                    task="fill_level_ordinal",
+                    answer=discretize_fill_level_ordinal(fill_percentage),
                     metadata={"unit": "percent_of_tip_height"},
                 )
             )
