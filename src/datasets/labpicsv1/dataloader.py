@@ -184,6 +184,11 @@ class LabPicsV1Dataset:
         material_answer = "NONE" if not material_types else ", ".join(material_types)
         multiphase_answer = "YES" if sample.get("multi_phase_material") else "NO"
         region = _select_region_candidate(sample)
+        needs_liquid_targets = (
+            self._prompt_bank.supports(dataset, "liquid_presence")
+            or self._prompt_bank.supports(dataset, "liquid_grounding")
+        )
+        liquid_targets = _liquid_grounding_targets(sample) if needs_liquid_targets else []
 
         annotations: List[TLGAnnotation] = []
         if region is not None and self._prompt_bank.supports(dataset, "highlighted_region_type"):
@@ -207,6 +212,17 @@ class LabPicsV1Dataset:
                     metadata={"material_types": material_types or ["NONE"]},
                 )
             )
+        if self._prompt_bank.supports(dataset, "liquid_presence"):
+            annotations.append(
+                add(
+                    task="liquid_presence",
+                    answer="YES" if liquid_targets else "NO",
+                    metadata={
+                        "source": "instance_or_semantic_liquid_mask",
+                        "liquid_region_count": len(liquid_targets),
+                    },
+                )
+            )
         if self._prompt_bank.supports(dataset, "multiphase_material_presence"):
             annotations.append(
                 add(
@@ -219,15 +235,14 @@ class LabPicsV1Dataset:
                 )
             )
         if self._prompt_bank.supports(dataset, "liquid_grounding"):
-            targets = _liquid_grounding_targets(sample)
             annotations.append(
                 add(
                     task="liquid_grounding",
-                    answer=targets,
+                    answer=liquid_targets,
                     metadata={
                         "coordinate_scale": 1000,
                         "source": "instance_or_semantic_liquid_mask",
-                        "liquid_region_count": len(targets),
+                        "liquid_region_count": len(liquid_targets),
                     },
                 )
             )

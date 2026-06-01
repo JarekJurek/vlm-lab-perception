@@ -40,6 +40,7 @@ dtld:
 
 labpicsv1:
   - highlighted_region_type
+  - liquid_presence
   - material_types_present
   - multiphase_material_presence
   - liquid_grounding
