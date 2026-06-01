@@ -131,9 +131,10 @@ liquid_grounding:
     Include transparent, colored, or partially occluded liquid if a liquid region or meniscus is visible.
     Do not include container walls, caps, labels, reflections, shadows, foam-only regions, or background objects.
     Use coordinates normalized to the 0-1000 image scale in [x1, y1, x2, y2] format.
-    If no liquid is visible, return an empty JSON list.
+    If no liquid is visible, return exactly [].
+    Do not invent a box for empty containers, vessel walls, labels, glare, shadows, or foam-only regions.
 
-    Output format: only valid JSON in this exact schema:
+    Output format: only valid JSON. Return either [] or a list in this exact schema:
     [{"bbox_2d":[x1,y1,x2,y2],"label":"Liquid"}]
 
 highlighted_region_type:

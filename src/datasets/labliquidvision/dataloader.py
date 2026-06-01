@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
 
 import numpy as np
+from PIL import Image
 
 from functools import partial
 
@@ -196,6 +197,21 @@ class LabLiquidVisionDataset:
                 add(task="liquid_color", answer=color_liquid.strip(), metadata={"color_liquid": color_liquid.strip()})
             )
 
+        if self._prompt_bank.supports(dataset, "liquid_grounding"):
+            targets = _liquid_mask_grounding_targets(Path(str(sample["path"])))
+            if targets is not None:
+                annotations.append(
+                    add(
+                        task="liquid_grounding",
+                        answer=targets,
+                        metadata={
+                            "coordinate_scale": 1000,
+                            "source": "content_mask_clean",
+                            "liquid_region_count": len(targets),
+                        },
+                    )
+                )
+
         return annotations
 
 
@@ -218,3 +234,51 @@ def _as_float(value: object) -> Optional[float]:
         except ValueError:
             return None
     return None
+
+
+def _liquid_mask_grounding_targets(sample_dir: Path) -> Optional[List[Dict[str, object]]]:
+    bbox = _mask_bbox(sample_dir / "Input_ContentMaskClean.png")
+    if bbox is None:
+        bbox = _mask_bbox(sample_dir / "Input_ContentMaskClean.npy")
+    if bbox is None:
+        return None
+    if not bbox:
+        return []
+    return [{"bbox_2d": bbox, "label": "Liquid"}]
+
+
+def _mask_bbox(path: Path) -> Optional[List[int]]:
+    if not path.exists():
+        return None
+
+    if path.suffix.lower() == ".npy":
+        arr = np.load(path)
+        mask = np.asarray(arr) > 0
+        if mask.ndim > 2:
+            mask = np.any(mask, axis=-1)
+        ys, xs = np.nonzero(mask)
+        if len(xs) == 0 or len(ys) == 0:
+            return []
+        height, width = mask.shape[:2]
+        return _xyxy_to_qwen_bbox(float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()), width, height)
+
+    with Image.open(path) as img:
+        mask_img = img.convert("L")
+        bbox = mask_img.point(lambda p: 255 if p > 0 else 0).getbbox()
+        if bbox is None:
+            return []
+        x0, y0, x1, y1 = bbox
+        return _xyxy_to_qwen_bbox(float(x0), float(y0), float(x1 - 1), float(y1 - 1), mask_img.width, mask_img.height)
+
+
+def _xyxy_to_qwen_bbox(x0: float, y0: float, x1: float, y1: float, width: int, height: int) -> List[int]:
+    return [
+        _clamp_qwen_coord(1000.0 * x0 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y0 / max(1, height - 1)),
+        _clamp_qwen_coord(1000.0 * x1 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y1 / max(1, height - 1)),
+    ]
+
+
+def _clamp_qwen_coord(value: float) -> int:
+    return int(round(max(0.0, min(1000.0, float(value)))))

@@ -218,6 +218,19 @@ class LabPicsV1Dataset:
                     },
                 )
             )
+        if self._prompt_bank.supports(dataset, "liquid_grounding"):
+            targets = _liquid_grounding_targets(sample)
+            annotations.append(
+                add(
+                    task="liquid_grounding",
+                    answer=targets,
+                    metadata={
+                        "coordinate_scale": 1000,
+                        "source": "instance_or_semantic_liquid_mask",
+                        "liquid_region_count": len(targets),
+                    },
+                )
+            )
         return annotations
 
 
@@ -298,6 +311,56 @@ def _semantic_region_candidates(sample: Dict[str, object]) -> List[Dict[str, obj
     return out
 
 
+def _liquid_grounding_targets(sample: Dict[str, object]) -> List[Dict[str, object]]:
+    mask_path = sample.get("instance_mask_path")
+    material_cats = _as_label_map(sample.get("material_categories"))
+    targets: List[Dict[str, object]] = []
+
+    if mask_path and Path(str(mask_path)).exists():
+        with Image.open(Path(str(mask_path))) as img:
+            mask = img.convert("RGB")
+            width, height = mask.size
+            material_channel = mask.split()[2]
+
+        liquid_instance_ids = {
+            int(inst_id)
+            for inst_id, labels in material_cats.items()
+            if any(_MATERIAL_LABEL_MAP.get(label) == "LIQUID" for label in labels)
+        }
+        if liquid_instance_ids:
+            lut = [255 if value in liquid_instance_ids else 0 for value in range(256)]
+            liquid_mask = material_channel.point(lut)
+            if liquid_mask.getbbox() is not None:
+                for bbox in _connected_component_boxes(liquid_mask):
+                    targets.append({"bbox_2d": _xyxy_to_qwen_bbox(bbox, width, height), "label": "Liquid"})
+
+    if targets:
+        return targets
+
+    semantic_root = sample.get("semantic_root")
+    stem = sample.get("image_name")
+    if not semantic_root or not stem:
+        return []
+
+    root = Path(str(semantic_root))
+    for class_dir_name, label in sorted(_SEMANTIC_LABEL_MAP.items()):
+        if label != "LIQUID":
+            continue
+        path = root / class_dir_name / f"{stem}.png"
+        if not path.exists():
+            continue
+        with Image.open(path) as img:
+            mask = img.convert("L")
+            lut = [255 if value not in (0, 254) else 0 for value in range(256)]
+            binary = mask.point(lut)
+            if binary.getbbox() is None:
+                continue
+            for bbox in _connected_component_boxes(binary):
+                targets.append({"bbox_2d": _xyxy_to_qwen_bbox(bbox, mask.width, mask.height), "label": "Liquid"})
+
+    return targets
+
+
 def _instance_boxes(mask: Image.Image) -> Dict[str, Dict[int, List[int]]]:
     boxes: Dict[str, Dict[int, List[int]]] = {"vessel": {}, "part": {}, "material": {}}
     channel_names = ("vessel", "part", "material")
@@ -343,6 +406,66 @@ def _find_background_box(mask: Image.Image) -> Optional[List[int]]:
             if total == 0:
                 return [x0, y0, x1 - 1, y1 - 1]
     return None
+
+
+def _connected_component_boxes(mask: Image.Image) -> List[List[int]]:
+    binary = mask.convert("1")
+    width, height = binary.size
+    pixels = binary.load()
+    visited = set()
+    boxes: List[List[int]] = []
+
+    for y in range(height):
+        for x in range(width):
+            if (x, y) in visited or not pixels[x, y]:
+                continue
+
+            stack = [(x, y)]
+            visited.add((x, y))
+            x0 = x1 = x
+            y0 = y1 = y
+
+            while stack:
+                cx, cy = stack.pop()
+                x0 = min(x0, cx)
+                x1 = max(x1, cx)
+                y0 = min(y0, cy)
+                y1 = max(y1, cy)
+
+                for nx, ny in (
+                    (cx - 1, cy - 1),
+                    (cx, cy - 1),
+                    (cx + 1, cy - 1),
+                    (cx - 1, cy),
+                    (cx + 1, cy),
+                    (cx - 1, cy + 1),
+                    (cx, cy + 1),
+                    (cx + 1, cy + 1),
+                ):
+                    if nx < 0 or ny < 0 or nx >= width or ny >= height:
+                        continue
+                    if (nx, ny) in visited or not pixels[nx, ny]:
+                        continue
+                    visited.add((nx, ny))
+                    stack.append((nx, ny))
+
+            boxes.append([x0, y0, x1, y1])
+
+    return boxes
+
+
+def _xyxy_to_qwen_bbox(bbox: List[int], width: int, height: int) -> List[int]:
+    x0, y0, x1, y1 = [float(v) for v in bbox[:4]]
+    return [
+        _clamp_qwen_coord(1000.0 * x0 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y0 / max(1, height - 1)),
+        _clamp_qwen_coord(1000.0 * x1 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y1 / max(1, height - 1)),
+    ]
+
+
+def _clamp_qwen_coord(value: float) -> int:
+    return int(round(max(0.0, min(1000.0, float(value)))))
 
 
 def _material_types_present(material_cats: Dict[str, List[str]]) -> List[str]:

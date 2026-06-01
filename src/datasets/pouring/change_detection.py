@@ -66,19 +66,26 @@ class PouringFrameOrderingDataset:
             frame_index = int(cast(Any, frame["frame_index"]))
             img_path = Path(str(cast(Any, frame["path"])))
             area = float(liquid_stats.get("total_area", 0.0))
+            grounding_targets: List[Dict[str, object]] = []
+            for ann in frame.get("annotations", []):
+                if getattr(ann, "metadata", {}).get("task") == "liquid_grounding" and isinstance(ann.answer, list):
+                    grounding_targets = list(ann.answer)
+                    break
 
             frames_by_video[video_id].append(
                 {
                     "frame_index": frame_index,
                     "img_path": img_path,
                     "area": area,
+                    "liquid_grounding_targets": grounding_targets,
                 }
             )
 
         has_liquid_presence = self.prompt_bank.supports("pouring", "liquid_presence")
+        has_liquid_grounding = self.prompt_bank.supports("pouring", "liquid_grounding")
         has_frame_ordering = self.prompt_bank.supports("pouring", "pouring_frame_ordering")
 
-        if has_liquid_presence:
+        if has_liquid_presence or has_liquid_grounding:
             for video_id, frame_infos in sorted(frames_by_video.items()):
                 for frame_info in sorted(frame_infos, key=lambda item: item["frame_index"]):
                     self._append_single_frame_sample(samples, video_id, frame_info)
@@ -182,6 +189,8 @@ class PouringFrameOrderingDataset:
 
         if self.prompt_bank.supports("pouring", "liquid_presence"):
             annotations.append(self._build_liquid_presence_annotation(sample_id, a))
+        if self.prompt_bank.supports("pouring", "liquid_grounding"):
+            annotations.append(self._build_liquid_grounding_annotation(sample_id, a))
 
         if not annotations:
             return
@@ -210,6 +219,24 @@ class PouringFrameOrderingDataset:
             metadata={
                 "frame_index": a["frame_index"],
                 "area": a["area"],
+            },
+        )
+
+    def _build_liquid_grounding_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:
+        targets = a.get("liquid_grounding_targets", [])
+        if not isinstance(targets, list):
+            targets = []
+        return make_tlg_annotation(
+            self.prompt_bank,
+            dataset="pouring",
+            task="liquid_grounding",
+            image_id=sample_id,
+            answer=targets,
+            metadata={
+                "frame_index": a["frame_index"],
+                "coordinate_scale": 1000,
+                "source": "labelme_liquid_mask_polygon",
+                "liquid_region_count": len(targets),
             },
         )
 

@@ -317,22 +317,34 @@ class PouringDataset:
             image_id=image_id,
         )
 
-        if not self._prompt_bank.supports(dataset, "liquid_presence"):
-            return annotations
-
         liquid_stats = sample.get("liquid_stats", {})
         if isinstance(liquid_stats, dict):
             liquid_poly_count = int(liquid_stats.get("polygon_count", 0))
         else:
             liquid_poly_count = 0
 
-        annotations.append(
-            add(
-                task="liquid_presence",
-                answer="YES" if liquid_poly_count > 0 else "NO",
-                metadata={"liquid_polygon_count": int(liquid_poly_count)},
+        if self._prompt_bank.supports(dataset, "liquid_presence"):
+            annotations.append(
+                add(
+                    task="liquid_presence",
+                    answer="YES" if liquid_poly_count > 0 else "NO",
+                    metadata={"liquid_polygon_count": int(liquid_poly_count)},
+                )
             )
-        )
+
+        if self._prompt_bank.supports(dataset, "liquid_grounding"):
+            targets = _liquid_grounding_targets_from_labelme(sample)
+            annotations.append(
+                add(
+                    task="liquid_grounding",
+                    answer=targets,
+                    metadata={
+                        "coordinate_scale": 1000,
+                        "source": "labelme_liquid_mask_polygon",
+                        "liquid_region_count": len(targets),
+                    },
+                )
+            )
 
         return annotations
 
@@ -418,3 +430,45 @@ def _compute_liquid_stats_from_labelme(labelme: Dict[str, Any]) -> Dict[str, Any
         "total_area": total_area,
         "presence": len(polys) > 0,
     }
+
+
+def _liquid_grounding_targets_from_labelme(sample: Dict[str, object]) -> List[Dict[str, object]]:
+    shapes = sample.get("labelme_shapes", [])
+    polys = _extract_liquid_polygons(shapes if isinstance(shapes, list) else [])
+    width = _positive_int(sample.get("image_width"))
+    height = _positive_int(sample.get("image_height"))
+    if width is None or height is None:
+        return []
+
+    targets: List[Dict[str, object]] = []
+    for poly in polys:
+        xs = [p[0] for p in poly]
+        ys = [p[1] for p in poly]
+        if not xs or not ys:
+            continue
+        bbox = _xyxy_to_qwen_bbox(min(xs), min(ys), max(xs), max(ys), width, height)
+        if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+            continue
+        targets.append({"bbox_2d": bbox, "label": "Liquid"})
+    return targets
+
+
+def _positive_int(value: object) -> Optional[int]:
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out > 0 else None
+
+
+def _xyxy_to_qwen_bbox(x0: float, y0: float, x1: float, y1: float, width: int, height: int) -> List[int]:
+    return [
+        _clamp_qwen_coord(1000.0 * x0 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y0 / max(1, height - 1)),
+        _clamp_qwen_coord(1000.0 * x1 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y1 / max(1, height - 1)),
+    ]
+
+
+def _clamp_qwen_coord(value: float) -> int:
+    return int(round(max(0.0, min(1000.0, float(value)))))

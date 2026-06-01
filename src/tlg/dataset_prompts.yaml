@@ -14,6 +14,7 @@ labliquidvision:
   - container_type
   - container_type_simple
   - liquid_color
+  - liquid_grounding
 
 glasses:
   - fill_percentage
@@ -41,6 +42,7 @@ labpicsv1:
   - highlighted_region_type
   - material_types_present
   - multiphase_material_presence
+  - liquid_grounding
 
 ot2:
   include:
@@ -66,3 +68,4 @@ ot2:
 pouring:
   - liquid_presence
   - pouring_frame_ordering
+  - liquid_grounding
