@@ -15,11 +15,11 @@ from .dataloader import PouringDataset
 
 _ORDER_LABELS = ("A", "B", "C", "D")
 _DEFAULT_MAX_ORDERING_SAMPLES_PER_VIDEO = 128
-_DEFAULT_MIN_ORDERING_FRAME_GAP = 4
+_DEFAULT_MIN_ORDERING_FRAME_GAP = 6
 
 
 class PouringFrameOrderingDataset:
-    """Three- or four-frame ordering tasks for Pouring test videos.
+    """Four-frame ordering tasks for Pouring test videos.
 
     ``min_ordering_frame_gap`` is measured in numeric rgb frame-index units.
     For example, rgb_82 -> rgb_84 has gap 2, while rgb_82 -> rgb_92 has gap 10.
@@ -95,8 +95,8 @@ class PouringFrameOrderingDataset:
         ordering_items: List[Tuple[str, Sequence[Dict[str, Any]], Tuple[int, ...]]] = []
         for video_id, frame_infos in sorted(frames_by_video.items()):
             frame_infos = sorted(frame_infos, key=lambda item: item["frame_index"])
-            if len(frame_infos) >= 3:
-                frame_count = 4 if len(frame_infos) >= 4 else 3
+            if len(frame_infos) >= 4:
+                frame_count = 4
                 for chosen_indices in _sample_frame_combinations(
                     len(frame_infos),
                     frame_count,
