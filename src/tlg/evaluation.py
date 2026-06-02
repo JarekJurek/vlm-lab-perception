@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .annotations import TLGAnnotation
@@ -49,6 +50,18 @@ _COUNT_TASKS = {"container_count"}
 _GROUNDING_TASKS = {"liquid_grounding"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
 _NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None)}
+_ORDINAL_TASKS = {"fill_level_ordinal"}
+_ORDINAL_VALUE = {"EMPTY": 0, "LOW": 1, "MID": 2, "HIGH": 3, "FULL": 4}
+_CLASSIFICATION_TASKS = {
+    "liquid_presence",
+    "tip_presence",
+    "container_type",
+    "container_type_simple",
+    "highlighted_region_type",
+    "liquid_color",
+    "multiphase_material_presence",
+}
+_POSITIVE_CLASS_TASKS = {"multiphase_material_presence": "YES"}
 _MATERIAL_TYPE_CHOICES = ("LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR")
 _COLOR_VARIANTS = {
     "reddish": "red", "bluish": "blue", "greenish": "green",
@@ -424,10 +437,44 @@ def _as_float(value: object) -> Optional[float]:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _as_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
 def _numeric_tolerance(task: str, tol_overrides: Optional[Dict[str, float]]) -> Optional[float]:
     if tol_overrides and task in tol_overrides:
         return float(tol_overrides[task])
     return default_tolerance(task)
+
+
+def _score_numeric_error(pred_f: float, gt_f: float) -> Dict[str, object]:
+    signed_error = float(pred_f - gt_f)
+    abs_error = abs(signed_error)
+    return {
+        "signed_error": signed_error,
+        "abs_error": abs_error,
+        "squared_error": signed_error * signed_error,
+    }
+
+
+def _score_ordinal(pred: object, gt: object) -> Dict[str, object]:
+    pred_value = _ORDINAL_VALUE.get(norm_text(pred).upper())
+    gt_value = _ORDINAL_VALUE.get(norm_text(gt).upper())
+    if pred_value is None or gt_value is None:
+        return {}
+
+    abs_error = abs(pred_value - gt_value)
+    return {
+        "ordinal_error": pred_value - gt_value,
+        "ordinal_abs_error": abs_error,
+        "ordinal_within_1": bool(abs_error <= 1),
+    }
 
 
 def parse_grounding_boxes(text: str) -> Optional[List[Dict[str, object]]]:
@@ -640,8 +687,8 @@ def score_prediction(
             record["correct"] = None
             return record
 
-        abs_err = abs(pred_f - gt_f)
-        record["abs_error"] = abs_err
+        record.update(_score_numeric_error(pred_f, gt_f))
+        abs_err = float(record["abs_error"])
 
         tol = _numeric_tolerance(task, tol_overrides)
         if tol is not None:
@@ -650,10 +697,20 @@ def score_prediction(
         else:
             record["correct"] = None
 
+        for tol_value in (5.0, 10.0):
+            record[f"within_{int(tol_value)}"] = bool(abs_err <= tol_value)
         return record
 
     if task in _COUNT_TASKS:
-        record["correct"] = bool(int(pred) == int(gt)) if isinstance(gt, (int, float)) else None
+        gt_int = _as_int(gt)
+        pred_int = _as_int(pred)
+        if gt_int is None or pred_int is None:
+            record["correct"] = None
+            return record
+
+        record.update(_score_numeric_error(float(pred_int), float(gt_int)))
+        record["within_1"] = bool(abs(int(record["signed_error"])) <= 1)
+        record["correct"] = bool(pred_int == gt_int)
         return record
 
     if task in _GROUNDING_TASKS:
@@ -665,6 +722,8 @@ def score_prediction(
         return record
 
     record["correct"] = labels_equal(task, pred, gt)
+    if task in _ORDINAL_TASKS:
+        record.update(_score_ordinal(pred, gt))
     if task == "pouring_frame_ordering":
         record.update(_score_frame_ordering(pred, gt))
     return record
@@ -672,30 +731,52 @@ def score_prediction(
 
 @dataclass
 class TaskStats:
+    task_name: Optional[str] = None
     n: int = 0
     n_valid: int = 0
     n_correct: int = 0
     abs_error_sum: float = 0.0
+    squared_error_sum: float = 0.0
+    signed_error_sum: float = 0.0
     n_abs_error: int = 0
     n_within_tol: int = 0
+    n_within_1: int = 0
+    n_within_5: int = 0
+    n_within_10: int = 0
+    abs_errors: List[float] = field(default_factory=list)
     precision_sum: float = 0.0
     recall_sum: float = 0.0
     f1_sum: float = 0.0
     mean_iou_sum: float = 0.0
     n_grounding: int = 0
+    grounding_gt_boxes: int = 0
+    grounding_pred_boxes: int = 0
+    grounding_matched_boxes: int = 0
+    grounding_count_abs_error_sum: float = 0.0
     position_correct: int = 0
     position_total: int = 0
     pairwise_correct: int = 0
     pairwise_total: int = 0
+    ordinal_abs_error_sum: float = 0.0
+    ordinal_total: int = 0
+    ordinal_within_1: int = 0
+    ordinal_pairs: List[Tuple[int, int]] = field(default_factory=list)
     exact_match_sum: int = 0
     n_exact_match: int = 0
     sample_precision_sum: float = 0.0
     sample_recall_sum: float = 0.0
     sample_f1_sum: float = 0.0
     n_sample_set: int = 0
+    multilabel_gt_labels: int = 0
+    multilabel_pred_labels: int = 0
+    multilabel_matched_labels: int = 0
+    class_counts: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
     def update_from_record(self, rec: Dict[str, object]) -> None:
         self.n += 1
+        task = str(rec.get("task", ""))
+        if task and self.task_name is None:
+            self.task_name = task
         if not rec.get("valid"):
             return
 
@@ -705,10 +786,27 @@ class TaskStats:
 
         abs_error = rec.get("abs_error")
         if isinstance(abs_error, (int, float)):
-            self.abs_error_sum += float(abs_error)
+            abs_error_f = float(abs_error)
+            self.abs_error_sum += abs_error_f
+            self.abs_errors.append(abs_error_f)
             self.n_abs_error += 1
+        squared_error = rec.get("squared_error")
+        if isinstance(squared_error, (int, float)):
+            self.squared_error_sum += float(squared_error)
+        signed_error = rec.get("signed_error")
+        if isinstance(signed_error, (int, float)):
+            self.signed_error_sum += float(signed_error)
         if rec.get("within_tol") is True:
             self.n_within_tol += 1
+        if rec.get("within_1") is True:
+            self.n_within_1 += 1
+        if rec.get("within_5") is True:
+            self.n_within_5 += 1
+        if rec.get("within_10") is True:
+            self.n_within_10 += 1
+
+        if task in _CLASSIFICATION_TASKS or task in _ORDINAL_TASKS:
+            self._update_classification_counts(task, rec.get("pred"), rec.get("gt"))
 
         if rec.get("task") == "material_types_present" and "sample_precision" not in rec:
             rec = {**rec, **_score_material_types(rec.get("pred"), rec.get("gt"))}
@@ -726,6 +824,13 @@ class TaskStats:
             self.sample_recall_sum += float(sample_recall)
             self.sample_f1_sum += float(sample_f1)
             self.n_sample_set += 1
+        n_gt_labels = rec.get("n_gt_labels")
+        n_pred_labels = rec.get("n_pred_labels")
+        n_matched_labels = rec.get("n_matched_labels")
+        if all(isinstance(v, int) for v in (n_gt_labels, n_pred_labels, n_matched_labels)):
+            self.multilabel_gt_labels += int(n_gt_labels)
+            self.multilabel_pred_labels += int(n_pred_labels)
+            self.multilabel_matched_labels += int(n_matched_labels)
 
         precision = rec.get("precision")
         recall = rec.get("recall")
@@ -737,6 +842,16 @@ class TaskStats:
             self.f1_sum += float(f1)
             self.mean_iou_sum += float(mean_iou)
             self.n_grounding += 1
+        n_gt_boxes = rec.get("n_gt_boxes")
+        n_pred_boxes = rec.get("n_pred_boxes")
+        n_matched_boxes = rec.get("n_matched_boxes")
+        if all(isinstance(v, int) for v in (n_gt_boxes, n_pred_boxes, n_matched_boxes)):
+            n_gt_boxes_i = int(n_gt_boxes)
+            n_pred_boxes_i = int(n_pred_boxes)
+            self.grounding_gt_boxes += n_gt_boxes_i
+            self.grounding_pred_boxes += n_pred_boxes_i
+            self.grounding_matched_boxes += int(n_matched_boxes)
+            self.grounding_count_abs_error_sum += abs(n_pred_boxes_i - n_gt_boxes_i)
 
         pairwise_correct = rec.get("pairwise_correct")
         pairwise_total = rec.get("pairwise_total")
@@ -750,6 +865,33 @@ class TaskStats:
             self.position_correct += position_correct
             self.position_total += position_total
 
+        ordinal_abs_error = rec.get("ordinal_abs_error")
+        if isinstance(ordinal_abs_error, (int, float)):
+            self.ordinal_abs_error_sum += float(ordinal_abs_error)
+            self.ordinal_total += 1
+        if rec.get("ordinal_within_1") is True:
+            self.ordinal_within_1 += 1
+        if task in _ORDINAL_TASKS:
+            pred_value = _ORDINAL_VALUE.get(norm_text(rec.get("pred")).upper())
+            gt_value = _ORDINAL_VALUE.get(norm_text(rec.get("gt")).upper())
+            if pred_value is not None and gt_value is not None:
+                self.ordinal_pairs.append((pred_value, gt_value))
+
+    def _update_classification_counts(self, task: str, pred: object, gt: object) -> None:
+        pred_label = _metric_label(task, pred)
+        gt_label = _metric_label(task, gt)
+        if not pred_label or not gt_label:
+            return
+        self._class_count(gt_label)["support"] += 1
+        if pred_label == gt_label:
+            self._class_count(gt_label)["tp"] += 1
+        else:
+            self._class_count(gt_label)["fn"] += 1
+            self._class_count(pred_label)["fp"] += 1
+
+    def _class_count(self, label: str) -> Dict[str, int]:
+        return self.class_counts.setdefault(label, {"tp": 0, "fp": 0, "fn": 0, "support": 0})
+
     def to_dict(self) -> Dict[str, object]:
         out: Dict[str, object] = {
             "n": int(self.n),
@@ -761,19 +903,75 @@ class TaskStats:
             out["accuracy"] = float(self.n_correct) / float(self.n_valid)
         if self.n_abs_error > 0:
             out["mae"] = float(self.abs_error_sum) / float(self.n_abs_error)
+            out["rmse"] = math.sqrt(float(self.squared_error_sum) / float(self.n_abs_error))
+            out["signed_bias"] = float(self.signed_error_sum) / float(self.n_abs_error)
+            out["median_abs_error"] = _median(self.abs_errors)
         if self.n_abs_error > 0 or self.n_within_tol > 0:
             out["within_tol"] = float(self.n_within_tol) / float(self.n_valid) if self.n_valid else None
+        if self.n_abs_error > 0 or self.n_within_1 > 0:
+            out["within_1"] = float(self.n_within_1) / float(self.n_valid) if self.n_valid else None
+        if self.n_abs_error > 0 or self.n_within_5 > 0:
+            out["within_5"] = float(self.n_within_5) / float(self.n_valid) if self.n_valid else None
+        if self.n_abs_error > 0 or self.n_within_10 > 0:
+            out["within_10"] = float(self.n_within_10) / float(self.n_valid) if self.n_valid else None
         if self.n_exact_match > 0:
             out["exact_match"] = float(self.exact_match_sum) / float(self.n_exact_match)
         if self.n_sample_set > 0:
             out["sample_precision"] = self.sample_precision_sum / float(self.n_sample_set)
             out["sample_recall"] = self.sample_recall_sum / float(self.n_sample_set)
             out["sample_f1"] = self.sample_f1_sum / float(self.n_sample_set)
+        if self.n_sample_set > 0:
+            micro_precision = (
+                float(self.multilabel_matched_labels) / float(self.multilabel_pred_labels)
+                if self.multilabel_pred_labels
+                else (1.0 if self.multilabel_gt_labels == 0 else 0.0)
+            )
+            micro_recall = (
+                float(self.multilabel_matched_labels) / float(self.multilabel_gt_labels)
+                if self.multilabel_gt_labels
+                else (1.0 if self.multilabel_pred_labels == 0 else 0.0)
+            )
+            out["micro_precision"] = micro_precision
+            out["micro_recall"] = micro_recall
+            out["micro_f1"] = _f1(micro_precision, micro_recall)
         if self.n_grounding > 0:
             out["precision"] = self.precision_sum / float(self.n_grounding)
             out["recall"] = self.recall_sum / float(self.n_grounding)
             out["f1"] = self.f1_sum / float(self.n_grounding)
             out["mean_iou"] = self.mean_iou_sum / float(self.n_grounding)
+        if self.n_grounding > 0:
+            micro_precision = (
+                float(self.grounding_matched_boxes) / float(self.grounding_pred_boxes)
+                if self.grounding_pred_boxes
+                else (1.0 if self.grounding_gt_boxes == 0 else 0.0)
+            )
+            micro_recall = (
+                float(self.grounding_matched_boxes) / float(self.grounding_gt_boxes)
+                if self.grounding_gt_boxes
+                else (1.0 if self.grounding_pred_boxes == 0 else 0.0)
+            )
+            out["micro_precision"] = micro_precision
+            out["micro_recall"] = micro_recall
+            out["micro_f1"] = _f1(micro_precision, micro_recall)
+            out["box_count_mae"] = (
+                self.grounding_count_abs_error_sum / float(self.n_grounding)
+                if self.n_grounding
+                else None
+            )
+        if self.class_counts:
+            out.update(_classification_summary(self.class_counts))
+            positive_label = _POSITIVE_CLASS_TASKS.get(self.task_name or "")
+            per_class = out.get("per_class")
+            if positive_label and isinstance(per_class, dict):
+                positive_metrics = per_class.get(positive_label)
+                if isinstance(positive_metrics, dict):
+                    out["positive_precision"] = positive_metrics.get("precision")
+                    out["positive_recall"] = positive_metrics.get("recall")
+                    out["positive_f1"] = positive_metrics.get("f1")
+                else:
+                    out["positive_precision"] = 0.0
+                    out["positive_recall"] = 0.0
+                    out["positive_f1"] = 0.0
         if self.position_total > 0:
             out["position_correct"] = int(self.position_correct)
             out["position_total"] = int(self.position_total)
@@ -783,4 +981,137 @@ class TaskStats:
             out["pairwise_total"] = int(self.pairwise_total)
             out["pairwise_accuracy"] = float(self.pairwise_correct) / float(self.pairwise_total)
             out["kendall_tau"] = (2.0 * out["pairwise_accuracy"]) - 1.0
+        if self.ordinal_total > 0:
+            out["ordinal_mae"] = self.ordinal_abs_error_sum / float(self.ordinal_total)
+            out["ordinal_within_1"] = float(self.ordinal_within_1) / float(self.ordinal_total)
+            out["quadratic_weighted_kappa"] = _quadratic_weighted_kappa(self.ordinal_pairs)
+        primary_metric = primary_metric_for_task(self.task_name or "")
+        if primary_metric in out:
+            out["primary_metric"] = primary_metric
+            out["primary_score"] = out[primary_metric]
         return out
+
+
+def _metric_label(task: str, value: object) -> str:
+    if task == "liquid_color":
+        return canonicalize_liquid_color(value) or norm_text(value)
+    if task == "container_type":
+        return canonicalize_container_type(value) or norm_text(value)
+    if task == "container_type_simple":
+        return canonicalize_container_type_simple(value) or norm_text(value)
+    return norm_text(value)
+
+
+def _f1(precision: float, recall: float) -> float:
+    return (
+        2.0 * precision * recall / (precision + recall)
+        if (precision + recall)
+        else 0.0
+    )
+
+
+def _median(values: List[float]) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def _classification_summary(class_counts: Dict[str, Dict[str, int]]) -> Dict[str, object]:
+    labels = sorted(class_counts)
+    per_class: Dict[str, Dict[str, float]] = {}
+    precisions: List[float] = []
+    recalls: List[float] = []
+    f1s: List[float] = []
+    support_recalls: List[float] = []
+    total_tp = total_fp = total_fn = 0
+
+    for label in labels:
+        counts = class_counts[label]
+        tp = int(counts.get("tp", 0))
+        fp = int(counts.get("fp", 0))
+        fn = int(counts.get("fn", 0))
+        support = int(counts.get("support", 0))
+        precision = float(tp) / float(tp + fp) if (tp + fp) else 0.0
+        recall = float(tp) / float(tp + fn) if (tp + fn) else 0.0
+        f1 = _f1(precision, recall)
+        per_class[label] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "support": float(support),
+        }
+        precisions.append(precision)
+        recalls.append(recall)
+        f1s.append(f1)
+        if support > 0:
+            support_recalls.append(recall)
+        total_tp += tp
+        total_fp += fp
+        total_fn += fn
+
+    micro_precision = float(total_tp) / float(total_tp + total_fp) if (total_tp + total_fp) else 0.0
+    micro_recall = float(total_tp) / float(total_tp + total_fn) if (total_tp + total_fn) else 0.0
+    return {
+        "macro_precision": sum(precisions) / float(len(precisions)) if precisions else None,
+        "macro_recall": sum(recalls) / float(len(recalls)) if recalls else None,
+        "macro_f1": sum(f1s) / float(len(f1s)) if f1s else None,
+        "balanced_accuracy": (
+            sum(support_recalls) / float(len(support_recalls))
+            if support_recalls
+            else None
+        ),
+        "micro_precision": micro_precision,
+        "micro_recall": micro_recall,
+        "micro_f1": _f1(micro_precision, micro_recall),
+        "per_class": per_class,
+    }
+
+
+def _quadratic_weighted_kappa(pairs: List[Tuple[int, int]]) -> Optional[float]:
+    if not pairs:
+        return None
+    n_classes = max(_ORDINAL_VALUE.values()) + 1
+    observed = [[0.0 for _ in range(n_classes)] for _ in range(n_classes)]
+    pred_hist = [0.0 for _ in range(n_classes)]
+    gt_hist = [0.0 for _ in range(n_classes)]
+    for pred, gt in pairs:
+        observed[pred][gt] += 1.0
+        pred_hist[pred] += 1.0
+        gt_hist[gt] += 1.0
+
+    n = float(len(pairs))
+    observed_weighted = 0.0
+    expected_weighted = 0.0
+    denom = float((n_classes - 1) ** 2)
+    for pred in range(n_classes):
+        for gt in range(n_classes):
+            weight = float((pred - gt) ** 2) / denom
+            observed_weighted += weight * observed[pred][gt]
+            expected_weighted += weight * (pred_hist[pred] * gt_hist[gt] / n)
+    if expected_weighted == 0.0:
+        return 1.0 if observed_weighted == 0.0 else 0.0
+    return 1.0 - (observed_weighted / expected_weighted)
+
+
+def primary_metric_for_task(task: str) -> str:
+    if task in {"liquid_presence", "tip_presence"}:
+        return "balanced_accuracy"
+    if task in {"container_type", "container_type_simple", "highlighted_region_type", "liquid_color"}:
+        return "macro_f1"
+    if task == "multiphase_material_presence":
+        return "positive_f1"
+    if task == "material_types_present":
+        return "micro_f1"
+    if task in {"fill_percentage", "fill_height_mm", "container_count"}:
+        return "mae"
+    if task == "fill_level_ordinal":
+        return "ordinal_mae"
+    if task == "liquid_grounding":
+        return "micro_f1"
+    if task == "pouring_frame_ordering":
+        return "pairwise_accuracy"
+    return "accuracy"
