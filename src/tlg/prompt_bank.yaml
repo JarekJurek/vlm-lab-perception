@@ -173,4 +173,4 @@ pouring_frame_ordering:
 
     Output format: only the frame labels in chronological order, separated by commas.
     Do not include explanations, numbering, punctuation beyond commas, or extra words.
-    Example output: A, C, B.
+    Example output: A, C, B, D.

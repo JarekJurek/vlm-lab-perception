@@ -1,9 +1,9 @@
 #!/bin/bash
 ### --------------- job name ------------------
-#BSUB -J qwen_pouring_labeled
+#BSUB -J qwen_dataset[1-6]
 
 ### --------------- queue name ----------------
-#BSUB -q gpua100
+#BSUB -q gpuv100
 
 ### --------------- GPU request ---------------
 #BSUB -gpu "num=1:mode=exclusive_process"
@@ -16,12 +16,12 @@
 #BSUB -R "rusage[mem=2GB]"
 
 ### --------------- wall-clock time ---------------
-#BSUB -W 20:00
+#BSUB -W 10:00
 
 ### --------------- output and error files ---------------
-#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_pouring_labeled_%J.out
-#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_pouring_labeled_%J.err
-
+#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_dataset_%J_%I.out
+#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_dataset_%J_%I.err
+    
 ### --------------- send email notifications -------------
 #BSUB -u s242911@dtu.dk
 #BSUB -B
@@ -44,11 +44,28 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export QWEN_MAX_PIXELS=$((512 * 28 * 28))
 export QWEN_MAX_NEW_TOKENS=512
 
-OUT_DIR="bakery/qwen_pouring_labeled"
+DATASETS=(
+    labliquidvision
+    glasses
+    dtld
+    labpicsv1
+    pouring
+    ot2
+)
+
+DATASET="${DATASETS[$((LSB_JOBINDEX - 1))]}"
+TIMESTAMP=$(date +%Y%m%d_%H)
+OUT_DIR="bakery/qwen_${TIMESTAMP}/${DATASET}"
 mkdir -p "${OUT_DIR}"
 
+echo "Array job index: ${LSB_JOBINDEX}"
+echo "Dataset: ${DATASET}"
+echo "Output directory: ${OUT_DIR}"
+
 python3 test_qwen_vl_tasks.py \
-    --datasets pouring \
+    --datasets "${DATASET}" \
     --model qwen \
     --predictions-out "${OUT_DIR}/preds.jsonl" \
-    --metrics-out "${OUT_DIR}/metrics.json"
+    --metrics-out "${OUT_DIR}/metrics.json" \
+    --shuffle \
+    --seed 42
