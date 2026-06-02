@@ -142,6 +142,15 @@ class LabLiquidVisionDataset:
         vol_liquid = _as_float(sample.get("vol_liquid"))
         vol_vessel = _as_float(sample.get("vol_vessel"))
 
+        if self._prompt_bank.supports(dataset, "container_count"):
+            annotations.append(
+                add(
+                    task="container_count",
+                    answer=1,
+                    metadata={"container_count": 1, "source": "single_vessel_sample"},
+                )
+            )
+
         if vol_liquid is not None and self._prompt_bank.supports(dataset, "liquid_presence"):
             annotations.append(
                 add(

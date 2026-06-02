@@ -11,6 +11,7 @@ labliquidvision:
   - liquid_presence
   - fill_percentage
   - fill_level_ordinal
+  - container_count
   - container_type
   - container_type_simple
   - liquid_color
