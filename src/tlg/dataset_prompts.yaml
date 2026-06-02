@@ -55,6 +55,7 @@ ot2:
     - container_count
     - container_type
     - container_type_simple
+    - liquid_color
   task_prompt_prefixes:
     fill_percentage:
       - pipette_tip_group_context_prompt

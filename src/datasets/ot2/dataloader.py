@@ -17,6 +17,7 @@ _IMG_EXTS = {".jpg", ".jpeg", ".png"}
 _DEFAULT_SPLITS: Tuple[str, ...] = ("train", "valid", "test")
 _SEQ_RE = re.compile(r"^(?P<base>.*)_(?P<idx>\d+)$")
 _NO_TIPS_RE = re.compile(r"^NoTips_\d+$")
+_LIQUID_COLOR_RE = re.compile(r"(blue|red|green|yellow|orange|purple|pink|clear)", re.IGNORECASE)
 
 
 _DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
@@ -274,6 +275,7 @@ class OT2Dataset:
 
         sample["annotations"] = self._build_annotations(
             image_id=image_id,
+            image_stem=img_path.stem,
             boxes=boxes,
             is_no_tips_negative=_is_no_tips_stem(img_path.stem),
         )
@@ -297,6 +299,7 @@ class OT2Dataset:
     def _build_annotations(
         self,
         image_id: str,
+        image_stem: str,
         boxes: List[YoloBox],
         *,
         is_no_tips_negative: bool = False,
@@ -319,6 +322,7 @@ class OT2Dataset:
         container_count = len(tip_boxes)
         liquid_box_count = len(liquid_boxes)
         fill_percentage = _compute_fill_percentage(tip_boxes, liquid_boxes)
+        liquid_color = _derive_liquid_color_from_stem(image_stem) if liquid_box_count > 0 else None
 
         annotations: List[TLGAnnotation] = []
 
@@ -360,6 +364,15 @@ class OT2Dataset:
                     task="liquid_presence",
                     answer="YES" if liquid_box_count > 0 else "NO",
                     metadata={"liquid_box_count": liquid_box_count},
+                )
+            )
+
+        if liquid_color is not None and self._prompt_bank.supports(dataset, "liquid_color"):
+            annotations.append(
+                add(
+                    task="liquid_color",
+                    answer=liquid_color,
+                    metadata={"source": "filename", "image_stem": image_stem},
                 )
             )
 
@@ -422,6 +435,13 @@ def _derive_sequence_fields(stem: str) -> Tuple[Optional[str], Optional[int]]:
 
 def _is_no_tips_stem(stem: str) -> bool:
     return bool(_NO_TIPS_RE.match(stem))
+
+
+def _derive_liquid_color_from_stem(stem: str) -> Optional[str]:
+    match = _LIQUID_COLOR_RE.search(stem)
+    if match is None:
+        return None
+    return match.group(1).lower()
 
 
 def _parse_yolo_label_file(path: Path) -> List[YoloBox]:
