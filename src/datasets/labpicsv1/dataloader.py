@@ -424,6 +424,27 @@ def _find_background_box(mask: Image.Image) -> Optional[List[int]]:
 
 
 def _connected_component_boxes(mask: Image.Image) -> List[List[int]]:
+    try:
+        import cv2  # type: ignore
+        import numpy as np
+
+        binary_arr = np.asarray(mask.convert("L")) > 0
+        if not bool(binary_arr.any()):
+            return []
+        n_labels, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
+            binary_arr.astype("uint8"),
+            connectivity=8,
+        )
+        boxes: List[List[int]] = []
+        for label_idx in range(1, int(n_labels)):
+            x0, y0, w, h, _area = [int(v) for v in stats[label_idx]]
+            if w <= 0 or h <= 0:
+                continue
+            boxes.append([x0, y0, x0 + w - 1, y0 + h - 1])
+        return boxes
+    except Exception:
+        pass
+
     binary = mask.convert("1")
     width, height = binary.size
     pixels = binary.load()
