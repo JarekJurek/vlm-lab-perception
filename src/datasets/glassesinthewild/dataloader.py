@@ -123,16 +123,6 @@ class GlassesInTheWildDataset:
                         metadata={"derived_fill_percentage": round(fill_clamped, 6)},
                     )
                 )
-            # A pragmatic definition: >~empty threshold implies liquid present.
-            if self._prompt_bank.supports(dataset, "liquid_presence"):
-                annotations.append(
-                    add(
-                        task="liquid_presence",
-                        answer="YES" if fill_clamped > 1.0 else "NO",
-                        metadata={"derived_fill_percentage": round(fill_clamped, 6)},
-                    )
-                )
-
         return annotations
 
     def _extract_keypoint_names(self, annotations_data: Dict[str, Any]) -> List[str]:

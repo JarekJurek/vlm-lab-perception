@@ -45,7 +45,7 @@ _CONTAINER_TYPE_ALIASES = {
     "pipettetip": "Tip",
 }
 
-_YES_NO_TASKS = {"liquid_presence", "tip_presence"}
+_YES_NO_TASKS = {"tip_presence"}
 _COUNT_TASKS = {"container_count"}
 _GROUNDING_TASKS = {"liquid_grounding"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
@@ -53,7 +53,6 @@ _NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None
 _ORDINAL_TASKS = {"fill_level_ordinal"}
 _ORDINAL_VALUE = {"EMPTY": 0, "LOW": 1, "MID": 2, "HIGH": 3, "FULL": 4}
 _CLASSIFICATION_TASKS = {
-    "liquid_presence",
     "tip_presence",
     "container_type",
     "container_type_simple",
@@ -1098,7 +1097,7 @@ def _quadratic_weighted_kappa(pairs: List[Tuple[int, int]]) -> Optional[float]:
 
 
 def primary_metric_for_task(task: str) -> str:
-    if task in {"liquid_presence", "tip_presence"}:
+    if task == "tip_presence":
         return "balanced_accuracy"
     if task in {"container_type", "container_type_simple", "highlighted_region_type", "liquid_color"}:
         return "macro_f1"

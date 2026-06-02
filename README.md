@@ -48,7 +48,7 @@ Provides:
 - Training split: RGB sequences plus empty-cup reference frames and per-frame cup masks (`*_cup_mask.png`) in dedicated mask folders
 - Natural “sequence” structure via `video_#` directories for frame-by-frame temporal sampling
 
-This dataset currently supports single-frame liquid presence detection and two-frame pouring change detection. When both tasks are enabled, TLG treats them as separate evaluation units: one sample per frame for liquid presence and a label-balanced subset of frame pairs for change detection.
+This dataset currently supports single-frame liquid grounding and two-frame pouring change detection. When both tasks are enabled, TLG treats them as separate evaluation units: one sample per annotated frame for liquid grounding and a label-balanced subset of frame pairs for change detection.
 
 **OT2 (Tips + Liquid)**
 YOLO-style object detection dataset built from lab videos exported frame-by-frame.
@@ -116,13 +116,6 @@ Each evaluation sample is associated with one or more structured prompts derived
 Identify the type of transparent container shown.  
 Closed vocabulary derived from dataset labels (e.g., beaker, flask, wine glass, tumbler).  
 Task type: **multi-class classification.**
-
-### Liquid Presence Detection (LPD)
-
-Determine whether the container contains liquid.  
-Derived from fill volume or mask presence.  
-Output: YES / NO.  
-Task type: **binary classification.**
 
 ### Pouring Change Detection (PCD)
 
@@ -250,7 +243,7 @@ python test_qwen_vl_tasks.py --dry-run --datasets pouring --max-samples 3 --shuf
 
 Default model in the script: `Qwen/Qwen3-VL-8B-Instruct`.
 
-By default, the runner processes all available samples. Use `--max-samples N` to cap evaluation. For ordinary datasets the cap is per dataset; for datasets with task-specific sample units (currently pouring), the cap is applied per task. For example, with both pouring tasks enabled, `--max-samples 200` selects up to 200 liquid-presence frame samples and up to 200 label-balanced pouring-change pair samples.
+By default, the runner processes all available samples. Use `--max-samples N` to cap evaluation. For ordinary datasets the cap is per dataset; for datasets with task-specific sample units (currently pouring), the cap is applied per task. For example, with both pouring tasks enabled, `--max-samples 200` selects up to 200 liquid-grounding frame samples and up to 200 label-balanced pouring-change pair samples.
 
 Useful runner flags:
 

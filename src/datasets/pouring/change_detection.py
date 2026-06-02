@@ -81,11 +81,10 @@ class PouringFrameOrderingDataset:
                 }
             )
 
-        has_liquid_presence = self.prompt_bank.supports("pouring", "liquid_presence")
         has_liquid_grounding = self.prompt_bank.supports("pouring", "liquid_grounding")
         has_frame_ordering = self.prompt_bank.supports("pouring", "pouring_frame_ordering")
 
-        if has_liquid_presence or has_liquid_grounding:
+        if has_liquid_grounding:
             for video_id, frame_infos in sorted(frames_by_video.items()):
                 for frame_info in sorted(frame_infos, key=lambda item: item["frame_index"]):
                     self._append_single_frame_sample(samples, video_id, frame_info)
@@ -187,8 +186,6 @@ class PouringFrameOrderingDataset:
         sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}"
         annotations: List[TLGAnnotation] = []
 
-        if self.prompt_bank.supports("pouring", "liquid_presence"):
-            annotations.append(self._build_liquid_presence_annotation(sample_id, a))
         if self.prompt_bank.supports("pouring", "liquid_grounding"):
             annotations.append(self._build_liquid_grounding_annotation(sample_id, a))
 
@@ -198,7 +195,7 @@ class PouringFrameOrderingDataset:
         samples.append(
             {
                 "id": sample_id,
-                "primary_task": "liquid_presence",
+                "primary_task": "liquid_grounding",
                 "split": self.split,
                 "video_id": video_id,
                 "frame_a_index": a["frame_index"],
@@ -207,19 +204,6 @@ class PouringFrameOrderingDataset:
                 "area_a": a["area"],
                 "annotations": annotations,
             }
-        )
-
-    def _build_liquid_presence_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:
-        return make_tlg_annotation(
-            self.prompt_bank,
-            dataset="pouring",
-            task="liquid_presence",
-            image_id=sample_id,
-            answer="YES" if a["area"] > 0 else "NO",
-            metadata={
-                "frame_index": a["frame_index"],
-                "area": a["area"],
-            },
         )
 
     def _build_liquid_grounding_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:

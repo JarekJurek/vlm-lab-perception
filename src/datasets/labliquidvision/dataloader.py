@@ -151,15 +151,6 @@ class LabLiquidVisionDataset:
                 )
             )
 
-        if vol_liquid is not None and self._prompt_bank.supports(dataset, "liquid_presence"):
-            annotations.append(
-                add(
-                    task="liquid_presence",
-                    answer="YES" if vol_liquid > 0 else "NO",
-                    metadata={"vol_liquid": vol_liquid, "vol_vessel": vol_vessel},
-                )
-            )
-
         if vol_liquid is not None and vol_vessel is not None and vol_vessel > 0:
             fill_percentage = (vol_liquid / vol_vessel) * 100.0
             fill_percentage = float(max(0.0, min(100.0, fill_percentage)))

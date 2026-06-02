@@ -26,8 +26,8 @@ def _ann(task: str, answer: object, choices: list[str] | None = None) -> TLGAnno
 class TaskMetricsTest(unittest.TestCase):
     def test_binary_classification_reports_balanced_accuracy_and_macro_f1(self) -> None:
         stats = TaskStats()
-        ann_yes = _ann("liquid_presence", "YES", ["YES", "NO"])
-        ann_no = _ann("liquid_presence", "NO", ["YES", "NO"])
+        ann_yes = _ann("tip_presence", "YES", ["YES", "NO"])
+        ann_no = _ann("tip_presence", "NO", ["YES", "NO"])
         for ann, pred in (
             (ann_yes, "YES"),
             (ann_yes, "NO"),

@@ -358,15 +358,6 @@ class OT2Dataset:
                 )
             )
 
-        if self._prompt_bank.supports(dataset, "liquid_presence"):
-            annotations.append(
-                add(
-                    task="liquid_presence",
-                    answer="YES" if liquid_box_count > 0 else "NO",
-                    metadata={"liquid_box_count": liquid_box_count},
-                )
-            )
-
         if liquid_color is not None and self._prompt_bank.supports(dataset, "liquid_color"):
             annotations.append(
                 add(

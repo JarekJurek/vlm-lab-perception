@@ -317,21 +317,6 @@ class PouringDataset:
             image_id=image_id,
         )
 
-        liquid_stats = sample.get("liquid_stats", {})
-        if isinstance(liquid_stats, dict):
-            liquid_poly_count = int(liquid_stats.get("polygon_count", 0))
-        else:
-            liquid_poly_count = 0
-
-        if self._prompt_bank.supports(dataset, "liquid_presence"):
-            annotations.append(
-                add(
-                    task="liquid_presence",
-                    answer="YES" if liquid_poly_count > 0 else "NO",
-                    metadata={"liquid_polygon_count": int(liquid_poly_count)},
-                )
-            )
-
         if self._prompt_bank.supports(dataset, "liquid_grounding"):
             targets = _liquid_grounding_targets_from_labelme(sample)
             annotations.append(

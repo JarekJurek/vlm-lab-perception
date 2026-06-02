@@ -184,10 +184,7 @@ class LabPicsV1Dataset:
         material_answer = "NONE" if not material_types else ", ".join(material_types)
         multiphase_answer = "YES" if sample.get("multi_phase_material") else "NO"
         region = _select_region_candidate(sample)
-        needs_liquid_targets = (
-            self._prompt_bank.supports(dataset, "liquid_presence")
-            or self._prompt_bank.supports(dataset, "liquid_grounding")
-        )
+        needs_liquid_targets = self._prompt_bank.supports(dataset, "liquid_grounding")
         liquid_targets = _liquid_grounding_targets(sample) if needs_liquid_targets else []
 
         annotations: List[TLGAnnotation] = []
@@ -210,17 +207,6 @@ class LabPicsV1Dataset:
                     task="material_types_present",
                     answer=material_answer,
                     metadata={"material_types": material_types or ["NONE"]},
-                )
-            )
-        if self._prompt_bank.supports(dataset, "liquid_presence"):
-            annotations.append(
-                add(
-                    task="liquid_presence",
-                    answer="YES" if liquid_targets else "NO",
-                    metadata={
-                        "source": "instance_or_semantic_liquid_mask",
-                        "liquid_region_count": len(liquid_targets),
-                    },
                 )
             )
         if self._prompt_bank.supports(dataset, "multiphase_material_presence"):

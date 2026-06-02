@@ -9,21 +9,6 @@ pipette_tip_group_context_prompt:
     The image may contain multiple pipette tips arranged together.
     Interpret singular container wording as referring to the visible tips as a group.
     For fill level, report the common or typical fill percentage across the visible tips.
-    For liquid presence, answer YES if liquid is visible in any visible tip.
-
-
-liquid_presence:
-  task_type: "Liquid Presence Detection (binary)"
-  question: |
-    You are analyzing a laboratory image of a liquid container.
-
-    Your task is to determine whether any liquid is visibly present inside the container.
-    Count transparent, colored, or partially occluded liquid as present if a liquid region, meniscus, or fill boundary is visible.
-    Do not count reflections, container walls, printed labels, shadows, caps, or background objects as liquid.
-
-    Options: YES, NO.
-    Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
-  choices: ["YES", "NO"]
 
 fill_percentage:
   task_type: "Fill-Level Estimation (continuous)"
