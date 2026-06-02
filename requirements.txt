@@ -10,3 +10,4 @@ accelerate
 peft
 bitsandbytes
 PyYAML
+scikit-learn
