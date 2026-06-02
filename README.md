@@ -48,7 +48,7 @@ Provides:
 - Training split: RGB sequences plus empty-cup reference frames and per-frame cup masks (`*_cup_mask.png`) in dedicated mask folders
 - Natural “sequence” structure via `video_#` directories for frame-by-frame temporal sampling
 
-This dataset currently supports single-frame liquid grounding and two-frame pouring change detection. When both tasks are enabled, TLG treats them as separate evaluation units: one sample per annotated frame for liquid grounding and a label-balanced subset of frame pairs for change detection.
+This dataset currently supports single-frame liquid grounding and four-frame pouring frame ordering. When both tasks are enabled, TLG treats them as separate evaluation units: one sample per annotated frame for liquid grounding and a label-balanced subset of frame-ordering samples.
 
 **OT2 (Tips + Liquid)**
 YOLO-style object detection dataset built from lab videos exported frame-by-frame.
@@ -107,7 +107,7 @@ For LabLiquidVision:
 }
 ```
 
-Each evaluation sample is associated with one or more structured prompts derived directly from available ground truth. Most datasets use one image per sample; pouring change detection uses a two-frame sample. Tasks are only defined when reliable supervision exists in the source dataset.
+Each evaluation sample is associated with one or more structured prompts derived directly from available ground truth. Most datasets use one image per sample; pouring frame ordering uses a labeled four-frame strip. Tasks are only defined when reliable supervision exists in the source dataset.
 
 ## Task Categories
 
@@ -186,7 +186,7 @@ TLG provides a structured and reproducible evaluation framework for multimodal r
 - `src/datasets/labliquidvision`: `LabLiquidVisionDataset`
 - `src/datasets/glassesinthewild`: `GlassesInTheWildDataset`
 - `src/datasets/dtld`: `DTLDDataset`
-- `src/datasets/pouring`: `PouringDataset`, `PouringChangeDetectionDataset`
+- `src/datasets/pouring`: `PouringDataset`, `PouringFrameOrderingDataset`
 - `src/datasets/ot2`: `OT2Dataset`
 - `src/tlg/prompt_bank.yaml`: prompt definitions (prompt_id -> question/choices)
 - `src/tlg/dataset_prompts.yaml`: dataset -> included tasks, with optional overrides
@@ -218,13 +218,13 @@ sys.path.insert(0, "src")
 from datasets.labliquidvision import LabLiquidVisionDataset
 from datasets.glassesinthewild import GlassesInTheWildDataset
 from datasets.dtld import DTLDDataset
-from datasets.pouring import PouringChangeDetectionDataset
+from datasets.pouring import PouringFrameOrderingDataset
 from datasets.ot2 import OT2Dataset
 
 lab_ds = LabLiquidVisionDataset("data/LabLiquidVision", rgb_only=True)
 glasses_ds = GlassesInTheWildDataset("data/glasses_in_the_wild/glasses_in_the_wild_1000")
 dtld_ds = DTLDDataset("data/DTLD_dataset", rgb_only=True)
-pouring_ds = PouringChangeDetectionDataset("data/pouring")
+pouring_ds = PouringFrameOrderingDataset("data/pouring")
 ot2_ds = OT2Dataset("data/OT2-Computer-Vision")
 
 sample = lab_ds[0]

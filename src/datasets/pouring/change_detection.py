@@ -316,6 +316,3 @@ def _stable_seed(seed: Optional[int], video_id: str) -> int:
     for char in video_id:
         base = (base * 33 + ord(char)) % (2**32)
     return base
-
-
-PouringChangeDetectionDataset = PouringFrameOrderingDataset
