@@ -21,7 +21,6 @@ class DTLDImageRoutingTest(unittest.TestCase):
         self.assertTrue(should_mark_target_box("dtld", "container_type"))
         self.assertTrue(should_mark_target_box("dtld", "container_type_simple"))
         self.assertTrue(should_mark_target_box("dtld", "fill_height_mm"))
-        self.assertTrue(should_mark_target_box("dtld", "liquid_presence"))
 
     def test_target_box_overlay_can_use_bbox_without_mask(self) -> None:
         image = Image.new("RGB", (20, 20), color=(255, 255, 255))

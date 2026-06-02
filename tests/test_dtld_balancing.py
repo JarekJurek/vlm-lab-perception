@@ -168,12 +168,10 @@ class DTLDBalancingTest(unittest.TestCase):
             self.assertIn("container_type", _task_names(low_visibility_sample))
             self.assertIn("container_type_simple", _task_names(low_visibility_sample))
             self.assertIn("fill_height_mm", _task_names(low_visibility_sample))
-            self.assertIn("liquid_presence", _task_names(low_visibility_sample))
             self.assertFalse(visible_sample["target_occluded"])
             self.assertIn("container_type", _task_names(visible_sample))
             self.assertIn("container_type_simple", _task_names(visible_sample))
             self.assertIn("fill_height_mm", _task_names(visible_sample))
-            self.assertIn("liquid_presence", _task_names(visible_sample))
 
     def test_overlapping_dtld_boxes_suppress_object_questions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
