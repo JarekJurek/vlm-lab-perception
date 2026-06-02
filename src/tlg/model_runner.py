@@ -312,18 +312,15 @@ def test_sample(
             labels = sample.get("ordered_image_labels")
             if not isinstance(labels, (list, tuple)) or len(labels) != len(ordered_images):
                 labels = [chr(ord("A") + i) for i in range(len(ordered_images))]
-            labeled_ordered_images = [
-                make_labeled_frame_image(image, label)
-                for image, label in zip(ordered_images, labels)
-            ]
+            task_image = make_labeled_image_strip(ordered_images, labels)
             prompt = (
-                "The images are provided in this label order: "
+                "The input image is a horizontal strip of frames. "
+                "The frames are provided from left to right with labels: "
                 f"{', '.join(str(label) for label in labels)}. "
                 "Use these labels in your answer.\n\n"
                 f"{prompt}"
             )
-            task_image = labeled_ordered_images[0]
-            extra_images = labeled_ordered_images[1:]
+            extra_images = None
             save_task_input_image = True
 
         response = run_task(
@@ -373,6 +370,34 @@ def make_labeled_frame_image(image: Any, label: object) -> Any:
     text_x = max(0, (frame.width - text_w) // 2)
     text_y = max(0, (header_h - text_h) // 2)
     draw.text((text_x, text_y), text, fill=(255, 255, 255), font=font)
+    return out
+
+
+def make_labeled_image_strip(images: Sequence[Any], labels: Sequence[object]) -> Any:
+    """Combine frames into one RGB horizontal strip with a label above each frame."""
+    from PIL import Image
+
+    labeled_images = [
+        make_labeled_frame_image(image, label)
+        for image, label in zip(images, labels)
+    ]
+    if not labeled_images:
+        raise ValueError("make_labeled_image_strip requires at least one image")
+
+    target_height = max(image.height for image in labeled_images)
+
+    def _resize_to_height(img: Any) -> Any:
+        if img.height == target_height:
+            return img
+        new_width = max(1, round(img.width * target_height / img.height))
+        return img.resize((new_width, target_height))
+
+    resized = [_resize_to_height(image) for image in labeled_images]
+    out = Image.new("RGB", (sum(image.width for image in resized), target_height), color=(255, 255, 255))
+    x = 0
+    for image in resized:
+        out.paste(image, (x, 0))
+        x += image.width
     return out
 
 
