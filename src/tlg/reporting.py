@@ -64,21 +64,45 @@ def print_stats(title: str, stats: Dict[str, TaskStats]) -> None:
         d = stats[task].to_dict()
         n_valid = d.get("n_valid", 0)
         n = d.get("n", 0)
+        primary_metric = d.get("primary_metric")
+        primary_score = d.get("primary_score")
         acc = d.get("accuracy")
+        balanced_acc = d.get("balanced_accuracy")
+        macro_f1 = d.get("macro_f1")
+        micro_f1 = d.get("micro_f1")
+        positive_f1 = d.get("positive_f1")
         exact_match = d.get("exact_match")
         sample_precision = d.get("sample_precision")
         sample_recall = d.get("sample_recall")
         sample_f1 = d.get("sample_f1")
         mae = d.get("mae")
+        rmse = d.get("rmse")
+        signed_bias = d.get("signed_bias")
+        ordinal_mae = d.get("ordinal_mae")
+        ordinal_within_1 = d.get("ordinal_within_1")
+        qwk = d.get("quadratic_weighted_kappa")
         within = d.get("within_tol")
+        within_1 = d.get("within_1")
+        within_5 = d.get("within_5")
+        within_10 = d.get("within_10")
         precision = d.get("precision")
         recall = d.get("recall")
         f1 = d.get("f1")
         mean_iou = d.get("mean_iou")
         pairwise_acc = d.get("pairwise_accuracy")
         parts = [f"n={n}", f"valid={n_valid}"]
+        if isinstance(primary_metric, str) and isinstance(primary_score, float):
+            parts.append(f"primary={primary_metric}:{primary_score:.3f}")
         if isinstance(acc, float):
             parts.append(f"acc={acc:.3f}")
+        if isinstance(balanced_acc, float):
+            parts.append(f"balanced_acc={balanced_acc:.3f}")
+        if isinstance(macro_f1, float):
+            parts.append(f"macro_f1={macro_f1:.3f}")
+        if isinstance(micro_f1, float):
+            parts.append(f"micro_f1={micro_f1:.3f}")
+        if isinstance(positive_f1, float):
+            parts.append(f"positive_f1={positive_f1:.3f}")
         if isinstance(exact_match, float):
             parts.append(f"exact_match={exact_match:.3f}")
         if isinstance(sample_precision, float):
@@ -89,8 +113,24 @@ def print_stats(title: str, stats: Dict[str, TaskStats]) -> None:
             parts.append(f"sample_f1={sample_f1:.3f}")
         if isinstance(mae, float):
             parts.append(f"mae={mae:.3f}")
+        if isinstance(rmse, float):
+            parts.append(f"rmse={rmse:.3f}")
+        if isinstance(signed_bias, float):
+            parts.append(f"bias={signed_bias:.3f}")
+        if isinstance(ordinal_mae, float):
+            parts.append(f"ordinal_mae={ordinal_mae:.3f}")
+        if isinstance(ordinal_within_1, float):
+            parts.append(f"ordinal_within_1={ordinal_within_1:.3f}")
+        if isinstance(qwk, float):
+            parts.append(f"qwk={qwk:.3f}")
         if isinstance(within, float):
             parts.append(f"within_tol={within:.3f}")
+        if isinstance(within_1, float):
+            parts.append(f"within_1={within_1:.3f}")
+        if isinstance(within_5, float):
+            parts.append(f"within_5={within_5:.3f}")
+        if isinstance(within_10, float):
+            parts.append(f"within_10={within_10:.3f}")
         if isinstance(precision, float):
             parts.append(f"precision={precision:.3f}")
         if isinstance(recall, float):

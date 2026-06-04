@@ -527,10 +527,5 @@ class DTLDDataset:
 
         if liquid_h_f is not None:
             add_target_task("fill_height_mm", round(liquid_h_f, 2), {"liquid_h": liquid_h_f})
-            add_target_task(
-                "liquid_presence",
-                "YES" if liquid_h_f > 0 else "NO",
-                {"liquid_h": liquid_h_f},
-            )
 
         return annotations

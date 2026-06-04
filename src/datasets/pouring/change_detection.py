@@ -14,12 +14,12 @@ from .dataloader import PouringDataset
 
 
 _ORDER_LABELS = ("A", "B", "C", "D")
-_DEFAULT_MAX_ORDERING_SAMPLES_PER_VIDEO = 128
-_DEFAULT_MIN_ORDERING_FRAME_GAP = 4
+_DEFAULT_MAX_ORDERING_SAMPLES_PER_VIDEO = 700
+_DEFAULT_MIN_ORDERING_FRAME_GAP = 6
 
 
 class PouringFrameOrderingDataset:
-    """Three- or four-frame ordering tasks for Pouring test videos.
+    """Four-frame ordering tasks for Pouring test videos.
 
     ``min_ordering_frame_gap`` is measured in numeric rgb frame-index units.
     For example, rgb_82 -> rgb_84 has gap 2, while rgb_82 -> rgb_92 has gap 10.
@@ -66,19 +66,25 @@ class PouringFrameOrderingDataset:
             frame_index = int(cast(Any, frame["frame_index"]))
             img_path = Path(str(cast(Any, frame["path"])))
             area = float(liquid_stats.get("total_area", 0.0))
+            grounding_targets: List[Dict[str, object]] = []
+            for ann in frame.get("annotations", []):
+                if getattr(ann, "metadata", {}).get("task") == "liquid_grounding" and isinstance(ann.answer, list):
+                    grounding_targets = list(ann.answer)
+                    break
 
             frames_by_video[video_id].append(
                 {
                     "frame_index": frame_index,
                     "img_path": img_path,
                     "area": area,
+                    "liquid_grounding_targets": grounding_targets,
                 }
             )
 
-        has_liquid_presence = self.prompt_bank.supports("pouring", "liquid_presence")
+        has_liquid_grounding = self.prompt_bank.supports("pouring", "liquid_grounding")
         has_frame_ordering = self.prompt_bank.supports("pouring", "pouring_frame_ordering")
 
-        if has_liquid_presence:
+        if has_liquid_grounding:
             for video_id, frame_infos in sorted(frames_by_video.items()):
                 for frame_info in sorted(frame_infos, key=lambda item: item["frame_index"]):
                     self._append_single_frame_sample(samples, video_id, frame_info)
@@ -89,8 +95,8 @@ class PouringFrameOrderingDataset:
         ordering_items: List[Tuple[str, Sequence[Dict[str, Any]], Tuple[int, ...]]] = []
         for video_id, frame_infos in sorted(frames_by_video.items()):
             frame_infos = sorted(frame_infos, key=lambda item: item["frame_index"])
-            if len(frame_infos) >= 3:
-                frame_count = 4 if len(frame_infos) >= 4 else 3
+            if len(frame_infos) >= 4:
+                frame_count = 4
                 for chosen_indices in _sample_frame_combinations(
                     len(frame_infos),
                     frame_count,
@@ -180,8 +186,8 @@ class PouringFrameOrderingDataset:
         sample_id = f"{self.split}/{video_id}/rgb_{a['frame_index']}"
         annotations: List[TLGAnnotation] = []
 
-        if self.prompt_bank.supports("pouring", "liquid_presence"):
-            annotations.append(self._build_liquid_presence_annotation(sample_id, a))
+        if self.prompt_bank.supports("pouring", "liquid_grounding"):
+            annotations.append(self._build_liquid_grounding_annotation(sample_id, a))
 
         if not annotations:
             return
@@ -189,7 +195,7 @@ class PouringFrameOrderingDataset:
         samples.append(
             {
                 "id": sample_id,
-                "primary_task": "liquid_presence",
+                "primary_task": "liquid_grounding",
                 "split": self.split,
                 "video_id": video_id,
                 "frame_a_index": a["frame_index"],
@@ -200,16 +206,21 @@ class PouringFrameOrderingDataset:
             }
         )
 
-    def _build_liquid_presence_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:
+    def _build_liquid_grounding_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:
+        targets = a.get("liquid_grounding_targets", [])
+        if not isinstance(targets, list):
+            targets = []
         return make_tlg_annotation(
             self.prompt_bank,
             dataset="pouring",
-            task="liquid_presence",
+            task="liquid_grounding",
             image_id=sample_id,
-            answer="YES" if a["area"] > 0 else "NO",
+            answer=targets,
             metadata={
                 "frame_index": a["frame_index"],
-                "area": a["area"],
+                "coordinate_scale": 1000,
+                "source": "labelme_liquid_mask_polygon",
+                "liquid_region_count": len(targets),
             },
         )
 
@@ -305,6 +316,3 @@ def _stable_seed(seed: Optional[int], video_id: str) -> int:
     for char in video_id:
         base = (base * 33 + ord(char)) % (2**32)
     return base
-
-
-PouringChangeDetectionDataset = PouringFrameOrderingDataset

@@ -93,15 +93,15 @@ class PouringFrameOrderingTest(unittest.TestCase):
 
     def test_default_min_ordering_frame_gap_skips_adjacent_saved_frames(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 2, 4, 6, 8, 10, 12])
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 2, 4, 6, 8, 10, 12, 18])
 
             dataset = PouringFrameOrderingDataset(root, prompt_bank=PromptBank.default(), seed=7)
             ordering_samples = [sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering"]
 
             self.assertTrue(ordering_samples)
             for sample in ordering_samples:
-                self.assertGreaterEqual(min(sample["chronological_frame_gaps"]), 4)
-                self.assertEqual(sample["min_ordering_frame_gap"], 4)
+                self.assertGreaterEqual(min(sample["chronological_frame_gaps"]), 6)
+                self.assertEqual(sample["min_ordering_frame_gap"], 6)
 
     def test_min_ordering_frame_gap_can_return_no_ordering_samples(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -117,16 +117,18 @@ class PouringFrameOrderingTest(unittest.TestCase):
 
             self.assertEqual(ordering_samples, [])
 
-    def test_qwen_runner_passes_ordered_frames_as_multiple_images(self) -> None:
+    def test_qwen_runner_passes_ordered_frames_as_one_labeled_strip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 10, 20])
+            root = self._make_pouring_root(Path(tmpdir), frame_indices=[0, 10, 20, 30])
             dataset = PouringFrameOrderingDataset(root, prompt_bank=PromptBank.default(), seed=3)
             sample = next(sample for sample in dataset if sample["primary_task"] == "pouring_frame_ordering")
             captured = {}
             original_run_task = model_runner.run_task
 
             def fake_run_task(_model, _processor, image, prompt, **kwargs):
-                captured["primary_pixel"] = image.getpixel((0, 0))
+                captured["primary_header_pixel"] = image.getpixel((0, 0))
+                captured["primary_frame_pixel"] = image.getpixel((0, image.height - 1))
+                captured["primary_size"] = image.size
                 captured["extra_count"] = len(kwargs.get("extra_images") or [])
                 captured["prompt"] = prompt
                 return "ok"
@@ -147,9 +149,13 @@ class PouringFrameOrderingTest(unittest.TestCase):
                 model_runner.run_task = original_run_task
 
             first_display_index = sample["display_frame_indices"][0]
-            self.assertTrue(_colors_close(captured["primary_pixel"], _color_for_frame(first_display_index)))
-            self.assertEqual(captured["extra_count"], 2)
-            self.assertIn("A, B, C", captured["prompt"])
+            self.assertEqual(captured["primary_header_pixel"], (0, 0, 0))
+            self.assertGreater(captured["primary_size"][1], 8)
+            self.assertGreater(captured["primary_size"][0], 8)
+            self.assertTrue(_colors_close(captured["primary_frame_pixel"], _color_for_frame(first_display_index)))
+            self.assertEqual(captured["extra_count"], 0)
+            self.assertIn("horizontal strip of frames", captured["prompt"])
+            self.assertIn("A, B, C, D", captured["prompt"])
 
     def _make_pouring_root(self, base: Path, frame_indices: list[int]) -> Path:
         video_dir = base / "pouring_testset_videos" / "video_0"

@@ -9,21 +9,6 @@ pipette_tip_group_context_prompt:
     The image may contain multiple pipette tips arranged together.
     Interpret singular container wording as referring to the visible tips as a group.
     For fill level, report the common or typical fill percentage across the visible tips.
-    For liquid presence, answer YES if liquid is visible in any visible tip.
-
-
-liquid_presence:
-  task_type: "Liquid Presence Detection (binary)"
-  question: |
-    You are analyzing a laboratory image of a liquid container.
-
-    Your task is to determine whether any liquid is visibly present inside the container.
-    Count transparent, colored, or partially occluded liquid as present if a liquid region, meniscus, or fill boundary is visible.
-    Do not count reflections, container walls, printed labels, shadows, caps, or background objects as liquid.
-
-    Options: YES, NO.
-    Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
-  choices: ["YES", "NO"]
 
 fill_percentage:
   task_type: "Fill-Level Estimation (continuous)"
@@ -131,9 +116,10 @@ liquid_grounding:
     Include transparent, colored, or partially occluded liquid if a liquid region or meniscus is visible.
     Do not include container walls, caps, labels, reflections, shadows, foam-only regions, or background objects.
     Use coordinates normalized to the 0-1000 image scale in [x1, y1, x2, y2] format.
-    If no liquid is visible, return an empty JSON list.
+    If no liquid is visible, return exactly [].
+    Do not invent a box for empty containers, vessel walls, labels, glare, shadows, or foam-only regions.
 
-    Output format: only valid JSON in this exact schema:
+    Output format: only valid JSON. Return either [] or a list in this exact schema:
     [{"bbox_2d":[x1,y1,x2,y2],"label":"Liquid"}]
 
 highlighted_region_type:
@@ -187,4 +173,4 @@ pouring_frame_ordering:
 
     Output format: only the frame labels in chronological order, separated by commas.
     Do not include explanations, numbering, punctuation beyond commas, or extra words.
-    Example output: A, C, B.
+    Example output: A, C, B, D.

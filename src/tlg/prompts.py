@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, TypedDict, Union, cast
+from typing import Any, Dict, List, Mapping, TypedDict, Union, cast
 
 try:
     from typing import NotRequired
@@ -81,21 +81,6 @@ class PromptBank:
         include = assignment.get("include", [])
         overrides = cast(Dict[str, str], assignment.get("overrides", {}))
         return task in include or task in overrides
-
-    def datasets_for_prompt(self, prompt_id: str) -> List[str]:
-        """List datasets that reference the given prompt id.
-
-        Note: when no override is present, tasks implicitly map to prompt_id == task.
-        """
-
-        prompt_id = str(prompt_id)
-        out: List[str] = []
-        for ds, assignment in self.dataset_assignments.items():
-            include = assignment.get("include", [])
-            overrides = cast(Dict[str, str], assignment.get("overrides", {}))
-            if prompt_id in overrides.values() or prompt_id in include:
-                out.append(str(ds))
-        return sorted(set(out))
 
     def target_region_bbox_prompt(self) -> str:
         """Return the shared prompt prefix for red-box target-region tasks."""

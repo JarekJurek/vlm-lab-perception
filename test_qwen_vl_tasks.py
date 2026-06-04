@@ -382,6 +382,25 @@ def _record_results(
             }
             if "abs_error" in rec:
                 row["abs_error"] = rec["abs_error"]
+            for key in (
+                "squared_error",
+                "signed_error",
+                "within_1",
+                "within_5",
+                "within_10",
+                "ordinal_error",
+                "ordinal_abs_error",
+                "ordinal_within_1",
+                "exact_match",
+                "n_gt_labels",
+                "n_pred_labels",
+                "n_matched_labels",
+                "sample_precision",
+                "sample_recall",
+                "sample_f1",
+            ):
+                if key in rec:
+                    row[key] = rec[key]
             if "within_tol" in rec:
                 row["within_tol"] = rec["within_tol"]
             if extra_metadata is not None:

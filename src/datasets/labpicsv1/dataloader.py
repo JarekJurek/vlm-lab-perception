@@ -184,6 +184,8 @@ class LabPicsV1Dataset:
         material_answer = "NONE" if not material_types else ", ".join(material_types)
         multiphase_answer = "YES" if sample.get("multi_phase_material") else "NO"
         region = _select_region_candidate(sample)
+        needs_liquid_targets = self._prompt_bank.supports(dataset, "liquid_grounding")
+        liquid_targets = _liquid_grounding_targets(sample) if needs_liquid_targets else []
 
         annotations: List[TLGAnnotation] = []
         if region is not None and self._prompt_bank.supports(dataset, "highlighted_region_type"):
@@ -215,6 +217,18 @@ class LabPicsV1Dataset:
                     metadata={
                         "multi_phase_material": sample.get("multi_phase_material", []),
                         "multi_phase_vessels": sample.get("multi_phase_vessels", []),
+                    },
+                )
+            )
+        if self._prompt_bank.supports(dataset, "liquid_grounding"):
+            annotations.append(
+                add(
+                    task="liquid_grounding",
+                    answer=liquid_targets,
+                    metadata={
+                        "coordinate_scale": 1000,
+                        "source": "instance_or_semantic_liquid_mask",
+                        "liquid_region_count": len(liquid_targets),
                     },
                 )
             )
@@ -298,6 +312,56 @@ def _semantic_region_candidates(sample: Dict[str, object]) -> List[Dict[str, obj
     return out
 
 
+def _liquid_grounding_targets(sample: Dict[str, object]) -> List[Dict[str, object]]:
+    mask_path = sample.get("instance_mask_path")
+    material_cats = _as_label_map(sample.get("material_categories"))
+    targets: List[Dict[str, object]] = []
+
+    if mask_path and Path(str(mask_path)).exists():
+        with Image.open(Path(str(mask_path))) as img:
+            mask = img.convert("RGB")
+            width, height = mask.size
+            material_channel = mask.split()[2]
+
+        liquid_instance_ids = {
+            int(inst_id)
+            for inst_id, labels in material_cats.items()
+            if any(_MATERIAL_LABEL_MAP.get(label) == "LIQUID" for label in labels)
+        }
+        if liquid_instance_ids:
+            lut = [255 if value in liquid_instance_ids else 0 for value in range(256)]
+            liquid_mask = material_channel.point(lut)
+            if liquid_mask.getbbox() is not None:
+                for bbox in _connected_component_boxes(liquid_mask):
+                    targets.append({"bbox_2d": _xyxy_to_qwen_bbox(bbox, width, height), "label": "Liquid"})
+
+    if targets:
+        return targets
+
+    semantic_root = sample.get("semantic_root")
+    stem = sample.get("image_name")
+    if not semantic_root or not stem:
+        return []
+
+    root = Path(str(semantic_root))
+    for class_dir_name, label in sorted(_SEMANTIC_LABEL_MAP.items()):
+        if label != "LIQUID":
+            continue
+        path = root / class_dir_name / f"{stem}.png"
+        if not path.exists():
+            continue
+        with Image.open(path) as img:
+            mask = img.convert("L")
+            lut = [255 if value not in (0, 254) else 0 for value in range(256)]
+            binary = mask.point(lut)
+            if binary.getbbox() is None:
+                continue
+            for bbox in _connected_component_boxes(binary):
+                targets.append({"bbox_2d": _xyxy_to_qwen_bbox(bbox, mask.width, mask.height), "label": "Liquid"})
+
+    return targets
+
+
 def _instance_boxes(mask: Image.Image) -> Dict[str, Dict[int, List[int]]]:
     boxes: Dict[str, Dict[int, List[int]]] = {"vessel": {}, "part": {}, "material": {}}
     channel_names = ("vessel", "part", "material")
@@ -343,6 +407,87 @@ def _find_background_box(mask: Image.Image) -> Optional[List[int]]:
             if total == 0:
                 return [x0, y0, x1 - 1, y1 - 1]
     return None
+
+
+def _connected_component_boxes(mask: Image.Image) -> List[List[int]]:
+    try:
+        import cv2  # type: ignore
+        import numpy as np
+
+        binary_arr = np.asarray(mask.convert("L")) > 0
+        if not bool(binary_arr.any()):
+            return []
+        n_labels, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
+            binary_arr.astype("uint8"),
+            connectivity=8,
+        )
+        boxes: List[List[int]] = []
+        for label_idx in range(1, int(n_labels)):
+            x0, y0, w, h, _area = [int(v) for v in stats[label_idx]]
+            if w <= 0 or h <= 0:
+                continue
+            boxes.append([x0, y0, x0 + w - 1, y0 + h - 1])
+        return boxes
+    except Exception:
+        pass
+
+    binary = mask.convert("1")
+    width, height = binary.size
+    pixels = binary.load()
+    visited = set()
+    boxes: List[List[int]] = []
+
+    for y in range(height):
+        for x in range(width):
+            if (x, y) in visited or not pixels[x, y]:
+                continue
+
+            stack = [(x, y)]
+            visited.add((x, y))
+            x0 = x1 = x
+            y0 = y1 = y
+
+            while stack:
+                cx, cy = stack.pop()
+                x0 = min(x0, cx)
+                x1 = max(x1, cx)
+                y0 = min(y0, cy)
+                y1 = max(y1, cy)
+
+                for nx, ny in (
+                    (cx - 1, cy - 1),
+                    (cx, cy - 1),
+                    (cx + 1, cy - 1),
+                    (cx - 1, cy),
+                    (cx + 1, cy),
+                    (cx - 1, cy + 1),
+                    (cx, cy + 1),
+                    (cx + 1, cy + 1),
+                ):
+                    if nx < 0 or ny < 0 or nx >= width or ny >= height:
+                        continue
+                    if (nx, ny) in visited or not pixels[nx, ny]:
+                        continue
+                    visited.add((nx, ny))
+                    stack.append((nx, ny))
+
+            boxes.append([x0, y0, x1, y1])
+
+    return boxes
+
+
+def _xyxy_to_qwen_bbox(bbox: List[int], width: int, height: int) -> List[int]:
+    x0, y0, x1, y1 = [float(v) for v in bbox[:4]]
+    return [
+        _clamp_qwen_coord(1000.0 * x0 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y0 / max(1, height - 1)),
+        _clamp_qwen_coord(1000.0 * x1 / max(1, width - 1)),
+        _clamp_qwen_coord(1000.0 * y1 / max(1, height - 1)),
+    ]
+
+
+def _clamp_qwen_coord(value: float) -> int:
+    return int(round(max(0.0, min(1000.0, float(value)))))
 
 
 def _material_types_present(material_cats: Dict[str, List[str]]) -> List[str]:
