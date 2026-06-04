@@ -16,7 +16,8 @@ def parse_args() -> argparse.Namespace:
         choices=["labliquidvision", "glasses", "dtld", "labpicsv1", "pouring", "ot2"],
         default=None,
         help=(
-            "One or more datasets to evaluate. Default: labliquidvision."
+            "One or more datasets to evaluate. Default: labliquidvision for dataset loaders, "
+            "or all datasets present when --manifest is set."
         ),
     )
     parser.add_argument(
@@ -56,6 +57,18 @@ def parse_args() -> argparse.Namespace:
             "Override a dataset root, e.g. --data-root labliquidvision=/path/to/root. "
             "Can be provided multiple times."
         ),
+    )
+    parser.add_argument(
+        "--manifest",
+        type=str,
+        default="",
+        help="Optional exported TLG manifest JSON. When set, dataset loaders are bypassed.",
+    )
+    parser.add_argument(
+        "--manifest-split",
+        choices=["train", "test", "all"],
+        default="test",
+        help="Generated manifest split to evaluate when --manifest is set. Default: test.",
     )
     parser.add_argument(
         "--shuffle",
