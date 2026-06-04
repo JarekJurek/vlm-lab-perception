@@ -14,18 +14,30 @@ def parse_args() -> argparse.Namespace:
         "--datasets",
         nargs="+",
         choices=["labliquidvision", "glasses", "dtld", "labpicsv1", "pouring", "ot2"],
-        default=["labliquidvision"],
-        help="One or more datasets to evaluate.",
+        default=None,
+        help=(
+            "One or more datasets to evaluate. Default: labliquidvision for dataset loaders, "
+            "or all datasets present when --manifest is set."
+        ),
     )
     parser.add_argument(
         "--model",
-        choices=["qwen", "sdvlm", "both"],
+        choices=[
+            "qwen",
+            "sdvlm",
+            "both",
+            "internvl35_8b",
+            "llavaov2_8b",
+            "kimi_vl_a3b",
+        ],
         default="qwen",
         help=(
             "Which VLM(s) to run. "
             "'qwen' (default): Qwen3-VL only. "
             "'sdvlm': SD-VLM only (requires the llava package from SD-VLM). "
-            "'both': run Qwen3-VL and SD-VLM on every sample and report metrics for each."
+            "'both': run Qwen3-VL and SD-VLM on every sample and report metrics for each. "
+            "'internvl35_8b', 'llavaov2_8b', and 'kimi_vl_a3b': run one additional "
+            "open HF VLM."
         ),
     )
     parser.add_argument(
@@ -47,6 +59,18 @@ def parse_args() -> argparse.Namespace:
             "Override a dataset root, e.g. --data-root labliquidvision=/path/to/root. "
             "Can be provided multiple times."
         ),
+    )
+    parser.add_argument(
+        "--manifest",
+        type=str,
+        default="",
+        help="Optional exported TLG manifest JSON. When set, dataset loaders are bypassed.",
+    )
+    parser.add_argument(
+        "--manifest-split",
+        choices=["train", "test", "all"],
+        default="test",
+        help="Generated manifest split to evaluate when --manifest is set. Default: test.",
     )
     parser.add_argument(
         "--shuffle",
