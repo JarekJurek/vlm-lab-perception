@@ -110,15 +110,14 @@ def simplify_container_type(container_type: object) -> str:
     return _CONTAINER_TYPE_SIMPLE_MAP.get(label, label)
 
 
-def discretize_fill_level_ordinal(fill_percentage: float) -> str:
-    """Discretize a 0-100 fill percentage into EMPTY/LOW/MID/HIGH/FULL."""
+def discretize_fill_level_ordinal(fill_percentage: float, *, empty_threshold: float = 1.0) -> str:
+    """Discretize a 0-100 fill percentage into EMPTY/LOW/MID/HIGH."""
     p = max(0.0, min(100.0, float(fill_percentage)))
-    if p <= 1.0:
+    threshold = max(0.0, min(100.0, float(empty_threshold)))
+    if p <= threshold:
         return "EMPTY"
-    if p < 25.0:
+    if p < 50.0:
         return "LOW"
-    if p < 60.0:
+    if p < 75.0:
         return "MID"
-    if p < 90.0:
-        return "HIGH"
-    return "FULL"
+    return "HIGH"

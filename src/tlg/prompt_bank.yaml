@@ -28,11 +28,11 @@ fill_level_ordinal:
     You are analyzing a laboratory image of a liquid container.
 
     Your task is to classify the liquid fill level using one ordinal category.
-    Choose EMPTY when no liquid is visible, LOW for a small amount, MID for approximately half full, HIGH for mostly full, and FULL when the usable container volume appears completely or nearly completely filled.
+    Choose EMPTY when no liquid is visible, LOW for less than half full, MID for approximately half to three-quarters full, and HIGH when the usable container volume appears mostly or completely filled.
 
-    Options: EMPTY, LOW, MID, HIGH, FULL.
+    Options: EMPTY, LOW, MID, HIGH.
     Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
-  choices: ["EMPTY", "LOW", "MID", "HIGH", "FULL"]
+  choices: ["EMPTY", "LOW", "MID", "HIGH"]
 
 container_type:
   task_type: "Container Type Recognition (classification)"

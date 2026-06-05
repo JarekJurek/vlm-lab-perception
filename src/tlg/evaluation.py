@@ -51,7 +51,7 @@ _GROUNDING_TASKS = {"liquid_grounding"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
 _NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None)}
 _ORDINAL_TASKS = {"fill_level_ordinal"}
-_ORDINAL_VALUE = {"EMPTY": 0, "LOW": 1, "MID": 2, "HIGH": 3, "FULL": 4}
+_ORDINAL_VALUE = {"EMPTY": 0, "LOW": 1, "MID": 2, "HIGH": 3}
 _CLASSIFICATION_TASKS = {
     "tip_presence",
     "container_type",

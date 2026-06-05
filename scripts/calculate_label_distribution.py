@@ -237,17 +237,16 @@ def labels_for_gt(task: str, gt: Any) -> List[str]:
     return [format_label(gt)]
 
 
-def discretize_fill_level_ordinal(fill_percentage: float) -> str:
+def discretize_fill_level_ordinal(fill_percentage: float, *, empty_threshold: float = 1.0) -> str:
     p = max(0.0, min(100.0, float(fill_percentage)))
-    if p <= 1.0:
+    threshold = max(0.0, min(100.0, float(empty_threshold)))
+    if p <= threshold:
         return "EMPTY"
-    if p < 25.0:
+    if p < 50.0:
         return "LOW"
-    if p < 60.0:
+    if p < 75.0:
         return "MID"
-    if p < 90.0:
-        return "HIGH"
-    return "FULL"
+    return "HIGH"
 
 
 def format_label(value: Any) -> str:
@@ -576,7 +575,10 @@ def main() -> None:
         if task == "fill_percentage" and "fill_level_ordinal" in dataset_tasks.get(dataset, []):
             fill = _as_float(row["gt"])
             if fill is not None:
-                derived_ordinal_counts[dataset][discretize_fill_level_ordinal(fill)] += 1
+                empty_threshold = 21.0 if dataset == "glasses" else 1.0
+                derived_ordinal_counts[dataset][
+                    discretize_fill_level_ordinal(fill, empty_threshold=empty_threshold)
+                ] += 1
                 derived_ordinal_rows[dataset] += 1
         for label in labels_for_gt(task, row["gt"]):
             counts[key][label] += 1

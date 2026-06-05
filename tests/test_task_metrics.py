@@ -67,13 +67,13 @@ class TaskMetricsTest(unittest.TestCase):
 
     def test_ordinal_reports_distance_metrics(self) -> None:
         stats = TaskStats()
-        choices = ["EMPTY", "LOW", "MID", "HIGH", "FULL"]
-        for gt, pred in (("MID", "HIGH"), ("FULL", "LOW")):
+        choices = ["EMPTY", "LOW", "MID", "HIGH"]
+        for gt, pred in (("MID", "HIGH"), ("HIGH", "LOW")):
             stats.update_from_record(score_prediction(_ann("fill_level_ordinal", gt, choices), pred))
 
         out = stats.to_dict()
         self.assertAlmostEqual(out["accuracy"], 0.0)
-        self.assertAlmostEqual(out["ordinal_mae"], 2.0)
+        self.assertAlmostEqual(out["ordinal_mae"], 1.5)
         self.assertAlmostEqual(out["ordinal_within_1"], 0.5)
         self.assertIn("quadratic_weighted_kappa", out)
         self.assertEqual(out["primary_metric"], "ordinal_mae")

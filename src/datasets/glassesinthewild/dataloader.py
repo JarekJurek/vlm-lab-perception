@@ -10,6 +10,8 @@ import numpy as np
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation
 from tlg.annotations import discretize_fill_level_ordinal
 
+_GLASSES_EMPTY_FILL_THRESHOLD = 21.0  # Empirically determined threshold aligned with annotations.
+
 
 class GlassesInTheWildDataset:
     """Minimal loader for the Glasses in the Wild keypoint dataset."""
@@ -119,7 +121,10 @@ class GlassesInTheWildDataset:
                 annotations.append(
                     add(
                         task="fill_level_ordinal",
-                        answer=discretize_fill_level_ordinal(fill_clamped),
+                        answer=discretize_fill_level_ordinal(
+                            fill_clamped,
+                            empty_threshold=_GLASSES_EMPTY_FILL_THRESHOLD,
+                        ),
                         metadata={"derived_fill_percentage": round(fill_clamped, 6)},
                     )
                 )
