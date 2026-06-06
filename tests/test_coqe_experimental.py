@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from datasets.coqe import (  # noqa: E402
 from experimental.coqe.metrics import aggregate_records, edit_distance, score_prediction  # noqa: E402
 from experimental.coqe.parsing import parse_prediction  # noqa: E402
 from experimental.coqe.prompts import build_prompt  # noqa: E402
+from experimental.coqe.rescore_predictions import rescore_predictions  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,6 +87,12 @@ class COQEExperimentalTest(unittest.TestCase):
             ([0.0, 0.1, 0.2, 1.0, "opaque"], True, None),
         )
 
+    def test_parser_accepts_qwen_assistant_prefix(self) -> None:
+        self.assertEqual(
+            parse_prediction("volume", 'assistant\n{"volume_bin": "50_100_ml"}'),
+            ("50_100_ml", True, None),
+        )
+
     def test_parser_rejects_invalid_outputs(self) -> None:
         cases = [
             ("volume", '```json\n{"volume_bin": "50_100_ml"}\n```'),
@@ -121,6 +129,58 @@ class COQEExperimentalTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["per_class_accuracy"]["no"], 1.0)
         self.assertAlmostEqual(metrics["per_class_accuracy"]["cant_tell"], 0.0)
         self.assertAlmostEqual(metrics["average_per_class_accuracy"], 0.5)
+        self.assertEqual(metrics["paper_metrics"]["average_per_class_accuracy"], metrics["average_per_class_accuracy"])
+
+    def test_pouring_paper_metrics(self) -> None:
+        records = [
+            {
+                "task": "pouring",
+                "ground_truth": [0.0, 0.1, 0.2, 0.3, 0.4],
+                "valid": True,
+                "correct": True,
+                "edit_distance_le_0": True,
+                "edit_distance_le_1": True,
+                "edit_distance_le_2": True,
+                "edit_distance_le_3": True,
+                "edit_distance_le_4": True,
+            },
+            {
+                "task": "pouring",
+                "ground_truth": [0.0, 0.1, 0.2, 0.3, 0.4],
+                "valid": True,
+                "correct": False,
+                "edit_distance_le_0": False,
+                "edit_distance_le_1": True,
+                "edit_distance_le_2": True,
+                "edit_distance_le_3": True,
+                "edit_distance_le_4": True,
+            },
+        ]
+        metrics = aggregate_records(records)["pouring"]
+        self.assertAlmostEqual(metrics["paper_metrics"]["edit_distance_accuracy"]["0"], 0.5)
+        self.assertAlmostEqual(metrics["paper_metrics"]["edit_distance_accuracy"]["1"], 1.0)
+
+    def test_rescore_predictions_refreshes_parse_fields(self) -> None:
+        path = ROOT / "results" / "tmp_coqe_rescore_test.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "sample_id": "x",
+            "task": "volume",
+            "raw_response": 'assistant\n{"volume_bin": "50_100_ml"}',
+            "ground_truth": "50_100_ml",
+            "valid": False,
+            "correct": False,
+        }
+        path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        try:
+            rows = rescore_predictions(path)
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["valid"])
+        self.assertTrue(rows[0]["correct"])
+        self.assertEqual(rows[0]["parsed_prediction"], "50_100_ml")
 
 
 if __name__ == "__main__":

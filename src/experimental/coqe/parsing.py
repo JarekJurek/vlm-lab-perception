@@ -36,7 +36,7 @@ POURING_VALUES: Tuple[Union[float, str], ...] = (
 
 def parse_prediction(task: str, response: str) -> Tuple[Optional[Any], bool, Optional[str]]:
     try:
-        payload = json.loads(str(response).strip())
+        payload = json.loads(_extract_json_text(response))
     except json.JSONDecodeError as exc:
         return None, False, f"invalid_json: {exc.msg}"
     if not isinstance(payload, dict):
@@ -98,3 +98,10 @@ def _canonical_pour_value(value: Any) -> Optional[Union[float, str]]:
             if isinstance(allowed, float) and abs(allowed - rounded) < 1e-8:
                 return allowed
     return None
+
+
+def _extract_json_text(response: object) -> str:
+    text = str(response).strip()
+    if text.startswith("assistant\n"):
+        text = text.split("\n", 1)[1].strip()
+    return text

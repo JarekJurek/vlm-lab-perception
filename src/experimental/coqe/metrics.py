@@ -47,16 +47,26 @@ def aggregate_task(task: str, rows: Sequence[Mapping[str, Any]]) -> Dict[str, An
 
     if task in {"volume", "content", "comparative"}:
         labels = _labels_for_task(task)
-        out["average_per_class_accuracy"] = average_per_class_accuracy(rows, labels)
+        avg_per_class = average_per_class_accuracy(rows, labels)
+        out["average_per_class_accuracy"] = avg_per_class
         out["per_class_accuracy"] = per_class_accuracy(rows, labels)
         out["primary_metric"] = "average_per_class_accuracy"
+        out["paper_metrics"] = {
+            "average_per_class_accuracy": avg_per_class,
+        }
     elif task == "pouring":
         exact = sum(1 for row in rows if bool(row.get("correct")))
         out["exact_sequence_match"] = _safe_div(exact, total)
+        edit_distance_acc: Dict[str, Optional[float]] = {}
         for threshold in range(5):
             count = sum(1 for row in rows if bool(row.get(f"edit_distance_le_{threshold}")))
-            out[f"edit_distance_le_{threshold}"] = _safe_div(count, total)
+            value = _safe_div(count, total)
+            out[f"edit_distance_le_{threshold}"] = value
+            edit_distance_acc[str(threshold)] = value
         out["primary_metric"] = "exact_sequence_match"
+        out["paper_metrics"] = {
+            "edit_distance_accuracy": edit_distance_acc,
+        }
     else:
         out["primary_metric"] = "accuracy"
     return out
