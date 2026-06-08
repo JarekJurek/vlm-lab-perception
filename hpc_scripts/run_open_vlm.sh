@@ -68,7 +68,7 @@ echo "Dataset: ${DATASET}"
 echo "HF_HOME: ${HF_HOME}"
 echo "Output directory: ${OUT_DIR}"
 
-python3 test_qwen_vl_tasks.py \
+python3 run_vlm_tasks.py \
     --datasets "${DATASET}" \
     --model "${MODEL}" \
     --max-samples "${MAX_SAMPLES}" \

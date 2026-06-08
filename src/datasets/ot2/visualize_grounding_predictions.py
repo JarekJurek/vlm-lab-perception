@@ -130,10 +130,10 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Visualize OT2 tip/liquid grounding predictions.")
-    parser.add_argument("--predictions", required=True, help="Path to predictions JSONL from test_qwen_vl_tasks.py.")
+    parser.add_argument("--predictions", required=True, help="Path to predictions JSONL from run_vlm_tasks.py.")
     parser.add_argument("--data-root", default="data/OT2-Computer-Vision", help="OT2 dataset root.")
     parser.add_argument("--out-dir", required=True, help="Directory for rendered PNG files.")
-    parser.add_argument("--model", default="", help="Optional model key to filter, e.g. qwen or sdvlm.")
+    parser.add_argument("--model", default="", help="Optional model key to filter, e.g. qwen, sdvlm, or llavaov2_8b.")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of images to write.")
     parser.add_argument("--no-gt", action="store_true", help="Only draw predictions, not ground truth.")
     parser.add_argument("--combined", action="store_true", help="Draw GT and predictions on one image.")

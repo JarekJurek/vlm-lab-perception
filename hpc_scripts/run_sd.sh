@@ -32,6 +32,13 @@ source /zhome/a2/c/213547/work3/venv_sd/bin/activate
 
 export HF_HOME="/zhome/a2/c/213547/work3/master_thesis/models/"
 export HF_HUB_CACHE="${HF_HOME}/hub"
+export HUGGINGFACE_HUB_CACHE="${HF_HOME}/hub"
+export TRANSFORMERS_CACHE="${HF_HOME}/hub"
+export HF_XET_CACHE="${HF_HOME}/xet"
+export TORCH_HOME="${HF_HOME}/torch"
+export XDG_CACHE_HOME="${HF_HOME}/xdg"
+mkdir -p "${HF_HOME}" "${HF_HUB_CACHE}" "${HF_XET_CACHE}" "${TORCH_HOME}" "${XDG_CACHE_HOME}"
+
 export SDVLM_DEPTH_DIR="${SDVLM_DEPTH_DIR:-bakery/sdvlm_da3_all/da3_depth_cache}"
 export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
@@ -39,7 +46,7 @@ export OPENBLAS_NUM_THREADS=4
 export NUMEXPR_NUM_THREADS=4
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-python3 test_qwen_vl_tasks.py \
+python3 run_vlm_tasks.py \
     --model sdvlm \
     --sdvlm-depth-dir "${SDVLM_DEPTH_DIR}" \
     --datasets labliquidvision glasses dtld labpicsv1 pouring ot2 \

@@ -35,6 +35,14 @@ cd /zhome/a2/c/213547/vlm-lab-perception
 source /zhome/a2/c/213547/work3/venv/bin/activate
 
 export HF_HOME="/zhome/a2/c/213547/work3/master_thesis/models/"
+export HF_HUB_CACHE="${HF_HOME}/hub"
+export HUGGINGFACE_HUB_CACHE="${HF_HOME}/hub"
+export TRANSFORMERS_CACHE="${HF_HOME}/hub"
+export HF_XET_CACHE="${HF_HOME}/xet"
+export TORCH_HOME="${HF_HOME}/torch"
+export XDG_CACHE_HOME="${HF_HOME}/xdg"
+mkdir -p "${HF_HOME}" "${HF_HUB_CACHE}" "${HF_XET_CACHE}" "${TORCH_HOME}" "${XDG_CACHE_HOME}"
+
 export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 export OPENBLAS_NUM_THREADS=4
@@ -62,7 +70,7 @@ echo "Array job index: ${LSB_JOBINDEX}"
 echo "Dataset: ${DATASET}"
 echo "Output directory: ${OUT_DIR}"
 
-python3 test_qwen_vl_tasks.py \
+python3 run_vlm_tasks.py \
     --datasets "${DATASET}" \
     --model qwen \
     --predictions-out "${OUT_DIR}/preds.jsonl" \

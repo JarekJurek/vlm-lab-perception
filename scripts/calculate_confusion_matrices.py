@@ -2,7 +2,7 @@
 """Calculate sklearn confusion matrices from prediction files.
 
 The script scans a prediction root for `preds.jsonl` and `preds.json` files.
-Rows are expected to look like the records written by `test_qwen_vl_tasks.py`
+Rows are expected to look like the records written by `run_vlm_tasks.py`
 with at least `task`, `gt`, and `pred` fields. `dataset` and `model` are used
 for grouping when present, and inferred from the file path otherwise.
 """

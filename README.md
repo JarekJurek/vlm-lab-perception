@@ -190,7 +190,7 @@ TLG provides a structured and reproducible evaluation framework for multimodal r
 - `src/datasets/ot2`: `OT2Dataset`
 - `src/tlg/prompt_bank.yaml`: prompt definitions (prompt_id -> question/choices)
 - `src/tlg/dataset_prompts.yaml`: dataset -> included tasks, with optional overrides
-- `test_qwen_vl_tasks.py`: Qwen3-VL / SD-VLM task runner across datasets
+- `run_vlm_tasks.py`: VLM task evaluator across datasets
 - `notebooks/`: dataset preview notebooks
 - `hpc_scripts/`: helper scripts for HPC setup and runs
 - `data/`: dataset roots
@@ -231,14 +231,14 @@ sample = lab_ds[0]
 print(sample["id"], sample.get("vol_liquid"), sample.get("rgb_image"))
 ```
 
-### 2) Run Qwen3-VL tasks
+### 2) Run VLM tasks
 
 Evaluate one or more datasets:
 
 ```bash
-python test_qwen_vl_tasks.py --datasets labliquidvision
-python test_qwen_vl_tasks.py --datasets labliquidvision glasses dtld pouring ot2
-python test_qwen_vl_tasks.py --dry-run --datasets pouring --max-samples 3 --shuffle --seed 42
+python run_vlm_tasks.py --datasets labliquidvision
+python run_vlm_tasks.py --datasets labliquidvision glasses dtld pouring ot2
+python run_vlm_tasks.py --dry-run --datasets pouring --max-samples 3 --shuffle --seed 42
 ```
 
 Default model in the script: `Qwen/Qwen3-VL-8B-Instruct`.
@@ -256,6 +256,10 @@ Useful runner flags:
 | `--seed` | `0` | Seed used with `--shuffle` |
 | `--predictions-out` | unset | Write per-task JSONL predictions |
 | `--metrics-out` | unset | Write aggregated metrics JSON |
+
+Supported `--model` values are `qwen`, `sdvlm`, `internvl35_8b`,
+`llavaov2_8b`, and `kimi_vl_a3b`. The evaluator runs one model per process;
+use the HPC array scripts to cover multiple models and datasets.
 
 ### 3) Run SD-VLM tasks
 
@@ -277,13 +281,13 @@ pip install -e .
 
 ```bash
 # Default: SD-VLM estimates depth internally from the RGB image
-python test_qwen_vl_tasks.py --model sdvlm --datasets labliquidvision
+python run_vlm_tasks.py --model sdvlm --datasets labliquidvision
 
 # Use ground-truth depth maps from LabLiquidVision (Input_DepthMap.npy)
-python test_qwen_vl_tasks.py --model sdvlm --datasets labliquidvision --sdvlm-gt-depth
+python run_vlm_tasks.py --model sdvlm --datasets labliquidvision --sdvlm-gt-depth
 
 # Use a local SD-VLM checkpoint and a local vision tower
-python test_qwen_vl_tasks.py \
+python run_vlm_tasks.py \
     --model sdvlm \
     --datasets labliquidvision \
     --sdvlm-model-path /path/to/SD-VLM-7B \
@@ -291,26 +295,11 @@ python test_qwen_vl_tasks.py \
     --sdvlm-gt-depth
 ```
 
-#### Run Qwen3-VL and SD-VLM side-by-side
-
-```bash
-python test_qwen_vl_tasks.py \
-    --model both \
-    --datasets labliquidvision \
-    --sdvlm-gt-depth \
-    --predictions-out results/preds.jsonl \
-    --metrics-out results/metrics.json
-```
-
-The `--model both` option loads both models, evaluates each sample with each model, and writes
-per-model metrics to the output files.  The `"model"` field in the JSONL predictions file
-distinguishes Qwen (`"qwen"`) from SD-VLM (`"sdvlm"`) rows.
-
 #### SD-VLM CLI flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model` | `qwen` | Which model(s) to run: `qwen`, `sdvlm`, or `both` |
+| `--model` | `qwen` | Which model to run: `qwen`, `sdvlm`, `internvl35_8b`, `llavaov2_8b`, or `kimi_vl_a3b` |
 | `--sdvlm-model-path` | `cpystan/SD-VLM-7B` | HuggingFace ID or local path for the SD-VLM checkpoint |
 | `--sdvlm-vision-tower` | `openai/clip-vit-large-patch14-336` | Vision encoder identifier |
 | `--sdvlm-gt-depth` | off | Use ground-truth depth from the dataset (`Input_DepthMap.npy`) |
@@ -336,7 +325,7 @@ visualization logic lives in `attention_viz.py` and works by:
    upsampling the result to the original image resolution.
 
 ```bash
-python test_qwen_vl_tasks.py \
+python run_vlm_tasks.py \
     --model sdvlm \
     --datasets labliquidvision \
     --sdvlm-gt-depth \
