@@ -104,4 +104,7 @@ def _extract_json_text(response: object) -> str:
     text = str(response).strip()
     if text.startswith("assistant\n"):
         text = text.split("\n", 1)[1].strip()
+    lines = text.splitlines()
+    if len(lines) >= 2 and lines[0].strip().startswith("```") and lines[-1].strip() == "```":
+        text = "\n".join(lines[1:-1]).strip()
     return text

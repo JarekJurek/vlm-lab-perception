@@ -93,9 +93,18 @@ class COQEExperimentalTest(unittest.TestCase):
             ("50_100_ml", True, None),
         )
 
+    def test_parser_accepts_qwen_markdown_fenced_json(self) -> None:
+        self.assertEqual(
+            parse_prediction("volume", 'assistant\n```json\n{"volume_bin": "50_100_ml"}\n```'),
+            ("50_100_ml", True, None),
+        )
+        self.assertEqual(
+            parse_prediction("content", '```json\n{"fill_level": "50_percent"}\n```'),
+            ("50_percent", True, None),
+        )
+
     def test_parser_rejects_invalid_outputs(self) -> None:
         cases = [
-            ("volume", '```json\n{"volume_bin": "50_100_ml"}\n```'),
             ("volume", '{"volume_bin": "bad"}'),
             ("volume", '{"volume_bin": "50_100_ml", "extra": 1}'),
             ("content", '{"fill_level": 0}'),
