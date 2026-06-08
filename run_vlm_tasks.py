@@ -1,15 +1,17 @@
-"""Test VLMs on liquid container vision tasks.
+"""Evaluate VLMs on liquid container vision tasks.
 
-This script evaluates one or more VLMs on visual understanding tasks for
-multiple liquid-container datasets:
+This script evaluates one selected VLM on visual understanding tasks for
+one or more liquid-container datasets:
     - LabLiquidVision
     - Glasses in the Wild
     - DTLD
 
 Supported models (--model flag):
-    qwen   – Qwen3-VL (default)
-    sdvlm  – SD-VLM  (requires the llava package from cpystan/SD-VLM)
-    both   – run Qwen3-VL and SD-VLM on every sample, report metrics for each
+    qwen          – Qwen3-VL (default)
+    sdvlm         – SD-VLM  (requires the llava package from cpystan/SD-VLM)
+    internvl35_8b – InternVL3.5-8B
+    llavaov2_8b   – LLaVA-OneVision-2-8B-Instruct
+    kimi_vl_a3b   – Kimi-VL-A3B-Thinking-2506
 """
 
 import json
@@ -26,7 +28,15 @@ from tlg import PromptBank
 from tlg.cli import parse_args, parse_data_root_overrides, parse_tol_overrides
 from tlg.dataset_factory import DATA_ROOTS, build_dataset
 from tlg.evaluation import TaskStats, score_prediction
-from tlg.model_runner import MAX_NEW_TOKENS, MODEL_NAME, load_model, test_sample
+from tlg.model_runner import (
+    HF_VLM_CONFIGS,
+    MAX_NEW_TOKENS,
+    MODEL_NAME,
+    load_hf_vlm_model,
+    load_model,
+    model_max_new_tokens,
+    test_sample,
+)
 from tlg.sdvlm_runner import (
     MAX_NEW_TOKENS as SDVLM_MAX_NEW_TOKENS,
     load_sdvlm_model,
@@ -55,15 +65,20 @@ def _has_standardized_annotations(sample: Dict[str, Any]) -> bool:
 def main():
     """Run all VLM tests."""
     args = parse_args()
-    dataset_names = args.datasets
 
     tol_overrides = parse_tol_overrides(args.tol)
     data_root_overrides = parse_data_root_overrides(args.data_root)
     prompt_bank = PromptBank.default()
+    dataset_names = args.datasets or ["labliquidvision"]
 
-    model_choice = args.model  # "qwen" | "sdvlm" | "both"
-    run_qwen = model_choice in ("qwen", "both")
-    run_sdvlm = model_choice in ("sdvlm", "both")
+    model_choice = args.model
+    open_hf_model_keys = ["internvl35_8b", "llavaov2_8b", "kimi_vl_a3b"]
+    run_qwen = model_choice == "qwen"
+    run_sdvlm = model_choice == "sdvlm"
+    if model_choice in open_hf_model_keys:
+        run_hf_model_keys = [model_choice]
+    else:
+        run_hf_model_keys = []
 
     precomputed_depth_dir = Path(args.sdvlm_depth_dir) if args.sdvlm_depth_dir else None
     if run_sdvlm and args.sdvlm_no_depth and precomputed_depth_dir is not None:
@@ -94,6 +109,13 @@ def main():
     model = processor = None
     sdvlm_model = sdvlm_tokenizer = sdvlm_image_processor = None
 
+    if viz_attn and run_hf_model_keys:
+        print(
+            "Attention visualization is implemented for Qwen/SD-VLM only; "
+            "disabling it for generic HF VLMs."
+        )
+
+    hf_models: Dict[str, Tuple[Any, Any]] = {}
     if not args.dry_run:
         if run_qwen:
             model, processor = load_model(viz_attn=viz_attn)
@@ -105,6 +127,8 @@ def main():
                 gt_depth=use_gt_depth,
                 viz_attn=viz_attn,
             )
+        for model_key in run_hf_model_keys:
+            hf_models[model_key] = load_hf_vlm_model(model_key, viz_attn=False)
 
     pred_out_path = Path(args.predictions_out) if args.predictions_out else None
     metrics_out_path = Path(args.metrics_out) if args.metrics_out else None
@@ -114,20 +138,21 @@ def main():
         pred_fh = pred_out_path.open("w", encoding="utf-8")
 
     # Per-model stats containers.
-    overall_stats: Dict[str, Dict[str, TaskStats]] = {
-        "qwen": {},
-        "sdvlm": {},
-    }
+    active_model_keys: List[str] = []
+    if run_qwen:
+        active_model_keys.append("qwen")
+    if run_sdvlm:
+        active_model_keys.append("sdvlm")
+    active_model_keys.extend(run_hf_model_keys)
+    overall_stats: Dict[str, Dict[str, TaskStats]] = {key: {} for key in active_model_keys}
     per_dataset_stats: Dict[str, Dict[str, Dict[str, TaskStats]]] = {
-        "qwen": {},
-        "sdvlm": {},
+        key: {} for key in active_model_keys
     }
 
     for dataset_name in dataset_names:
-        data_root = data_root_overrides.get(dataset_name, DATA_ROOTS[dataset_name])
-
         print(f"\n{'=' * 60}")
         print(f"Dataset: {dataset_name}")
+        data_root = data_root_overrides.get(dataset_name, DATA_ROOTS[dataset_name])
         print(f"Loading dataset from: {data_root}")
 
         if not data_root.exists():
@@ -290,16 +315,54 @@ def main():
                 for task_name, response in sdvlm_results.items():
                     print(f"  {task_name}: {response}")
 
+            # --- Generic Hugging Face VLM inference ---
+            for model_key in run_hf_model_keys:
+                model_label = HF_VLM_CONFIGS[model_key].label
+                hf_model, hf_processor = hf_models[model_key]
+                try:
+                    hf_results = test_sample(
+                        hf_model,
+                        hf_processor,
+                        sample,
+                        annotations,
+                        dataset_name=dataset_name,
+                        sample_id=str(sample.get("id", "unknown")),
+                        viz_attn=False,
+                        viz_out_dir=None,
+                        viz_attn_mode=str(args.viz_attn_mode),
+                        debug_dtld_boxes=debug_dtld_boxes,
+                        debug_image_out_dir=debug_image_out_dir,
+                        model_key=model_key,
+                        model_label=model_label,
+                        max_new_tokens=model_max_new_tokens(model_key),
+                    )
+                except (FileNotFoundError, OSError, SyntaxError) as e:
+                    print(f"[{model_label}] Failed to load images for sample index={idx0}: {e}")
+                    hf_results = {}
+
+                _record_results(
+                    model_key=model_key,
+                    results=hf_results,
+                    annotations=annotations,
+                    sample=sample,
+                    dataset_name=dataset_name,
+                    tol_overrides=tol_overrides,
+                    overall_stats=overall_stats,
+                    per_dataset_stats=per_dataset_stats,
+                    pred_fh=pred_fh,
+                )
+
+                print(f"\n[{model_label}] Predictions:")
+                for task_name, response in hf_results.items():
+                    print(f"  {task_name}: {response}")
+
     # Close prediction writer.
     if pred_fh is not None:
         pred_fh.close()
 
     # Print aggregated metrics per model.
-    active_models = {"qwen": run_qwen, "sdvlm": run_sdvlm}
-    for model_key in ("qwen", "sdvlm"):
-        if not active_models[model_key]:
-            continue
-        label = "Qwen" if model_key == "qwen" else "SD-VLM"
+    for model_key in active_model_keys:
+        label = _model_label(model_key)
         print_stats(f"[{label}] Overall Metrics", overall_stats[model_key])
         for ds in sorted(per_dataset_stats[model_key].keys()):
             print_stats(f"[{label}] Metrics for dataset={ds}", per_dataset_stats[model_key][ds])
@@ -333,9 +396,29 @@ def main():
                     for ds, stats in per_dataset_stats["sdvlm"].items()
                 },
             }
+        for model_key in run_hf_model_keys:
+            config = HF_VLM_CONFIGS[model_key]
+            payload[model_key] = {
+                "model_name": config.model_id,
+                "max_new_tokens": int(model_max_new_tokens(model_key)),
+                "trust_remote_code": bool(config.trust_remote_code),
+                "overall": {k: v.to_dict() for k, v in overall_stats[model_key].items()},
+                "per_dataset": {
+                    ds: {k: v.to_dict() for k, v in stats.items()}
+                    for ds, stats in per_dataset_stats[model_key].items()
+                },
+            }
         metrics_out_path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
+
+
+def _model_label(model_key: str) -> str:
+    if model_key == "qwen":
+        return "Qwen"
+    if model_key == "sdvlm":
+        return "SD-VLM"
+    return HF_VLM_CONFIGS[model_key].label
 
 
 def _record_results(

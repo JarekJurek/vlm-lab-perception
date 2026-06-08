@@ -39,7 +39,7 @@ class LabLiquidVisionDryRunTest(unittest.TestCase):
             result = subprocess.run(
                 [
                     sys.executable,
-                    str(REPO_ROOT / "test_qwen_vl_tasks.py"),
+                    str(REPO_ROOT / "run_vlm_tasks.py"),
                     "--dry-run",
                     "--datasets",
                     "labliquidvision",

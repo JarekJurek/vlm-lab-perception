@@ -1,4 +1,4 @@
-"""Command-line interface helpers for Qwen-VL evaluation."""
+"""Command-line interface helpers for VLM task evaluation."""
 
 from __future__ import annotations
 
@@ -14,18 +14,27 @@ def parse_args() -> argparse.Namespace:
         "--datasets",
         nargs="+",
         choices=["labliquidvision", "glasses", "dtld", "labpicsv1", "pouring", "ot2"],
-        default=["labliquidvision"],
-        help="One or more datasets to evaluate.",
+        default=None,
+        help=(
+            "One or more datasets to evaluate. Default: labliquidvision."
+        ),
     )
     parser.add_argument(
         "--model",
-        choices=["qwen", "sdvlm", "both"],
+        choices=[
+            "qwen",
+            "sdvlm",
+            "internvl35_8b",
+            "llavaov2_8b",
+            "kimi_vl_a3b",
+        ],
         default="qwen",
         help=(
-            "Which VLM(s) to run. "
+            "Which VLM to run. "
             "'qwen' (default): Qwen3-VL only. "
             "'sdvlm': SD-VLM only (requires the llava package from SD-VLM). "
-            "'both': run Qwen3-VL and SD-VLM on every sample and report metrics for each."
+            "'internvl35_8b', 'llavaov2_8b', and 'kimi_vl_a3b': run one additional "
+            "open HF VLM."
         ),
     )
     parser.add_argument(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -13,10 +14,66 @@ from tlg.prompts import PromptBank
 from tlg.target_overlay import is_valid_bbox_xywh, make_target_box_overlay, should_mark_target_box
 
 
+@dataclass(frozen=True)
+class HFVLMConfig:
+    key: str
+    label: str
+    model_id: str
+    max_new_tokens_env: str
+    default_max_new_tokens: int = 256
+    trust_remote_code: bool = False
+    dtype: str = "float16"
+    processor_max_pixels_env: Optional[str] = None
+    processor_min_pixels_env: Optional[str] = None
+    default_max_pixels: Optional[int] = None
+
+
 # MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Instruct"
-MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
-MAX_NEW_TOKENS = int(os.environ.get("QWEN_MAX_NEW_TOKENS", "256"))
+MODEL_NAME = os.environ.get("QWEN_MODEL_ID", "Qwen/Qwen3-VL-8B-Instruct")
 DEFAULT_QWEN_MAX_PIXELS = 512 * 28 * 28
+HF_VLM_CONFIGS: Dict[str, HFVLMConfig] = {
+    "qwen": HFVLMConfig(
+        key="qwen",
+        label="Qwen",
+        model_id=MODEL_NAME,
+        max_new_tokens_env="QWEN_MAX_NEW_TOKENS",
+        default_max_new_tokens=256,
+        processor_max_pixels_env="QWEN_MAX_PIXELS",
+        processor_min_pixels_env="QWEN_MIN_PIXELS",
+        default_max_pixels=DEFAULT_QWEN_MAX_PIXELS,
+    ),
+    "internvl35_8b": HFVLMConfig(
+        key="internvl35_8b",
+        label="InternVL3.5-8B",
+        model_id=os.environ.get("INTERNVL35_MODEL_ID", "OpenGVLab/InternVL3_5-8B"),
+        max_new_tokens_env="INTERNVL35_MAX_NEW_TOKENS",
+        default_max_new_tokens=256,
+        trust_remote_code=True,
+    ),
+    "llavaov2_8b": HFVLMConfig(
+        key="llavaov2_8b",
+        label="LLaVA-OV2-8B",
+        model_id=os.environ.get(
+            "LLAVAOV2_MODEL_ID",
+            "lmms-lab-encoder/LLaVA-OneVision-2-8B-Instruct",
+        ),
+        max_new_tokens_env="LLAVAOV2_MAX_NEW_TOKENS",
+        default_max_new_tokens=256,
+        trust_remote_code=True,
+    ),
+    "kimi_vl_a3b": HFVLMConfig(
+        key="kimi_vl_a3b",
+        label="Kimi-VL-A3B",
+        model_id=os.environ.get(
+            "KIMI_VL_MODEL_ID",
+            "moonshotai/Kimi-VL-A3B-Thinking-2506",
+        ),
+        max_new_tokens_env="KIMI_VL_MAX_NEW_TOKENS",
+        default_max_new_tokens=256,
+        trust_remote_code=True,
+    ),
+}
+MAX_NEW_TOKENS = int(os.environ.get("QWEN_MAX_NEW_TOKENS", "256"))
 
 
 def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
@@ -32,6 +89,72 @@ def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
     return value
 
 
+def _max_new_tokens(config: HFVLMConfig) -> int:
+    return _env_int(config.max_new_tokens_env, config.default_max_new_tokens) or config.default_max_new_tokens
+
+
+def model_max_new_tokens(model_key: str) -> int:
+    return _max_new_tokens(HF_VLM_CONFIGS[model_key])
+
+
+def _torch_dtype(torch: Any, dtype_name: str) -> Any:
+    if dtype_name == "bfloat16":
+        return torch.bfloat16
+    if dtype_name == "float32":
+        return torch.float32
+    return torch.float16
+
+
+def _processor_kwargs(config: HFVLMConfig) -> Dict[str, object]:
+    processor_kwargs: Dict[str, object] = {}
+    if config.processor_max_pixels_env is not None:
+        max_pixels = _env_int(config.processor_max_pixels_env, config.default_max_pixels)
+        if max_pixels is not None:
+            processor_kwargs["max_pixels"] = max_pixels
+    if config.processor_min_pixels_env is not None:
+        min_pixels = _env_int(config.processor_min_pixels_env)
+        if min_pixels is not None:
+            processor_kwargs["min_pixels"] = min_pixels
+    return processor_kwargs
+
+
+def load_hf_vlm_model(model_key: str, *, viz_attn: bool = False) -> Tuple[Any, Any]:
+    """Load a Hugging Face image-text-to-text VLM by registry key."""
+    import torch
+    from transformers import AutoModelForImageTextToText, AutoProcessor
+
+    if model_key not in HF_VLM_CONFIGS:
+        raise ValueError(f"Unknown HF VLM key: {model_key}")
+    config = HF_VLM_CONFIGS[model_key]
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Loading model [{config.label}]: {config.model_id}")
+    print(f"Device: {device}")
+
+    processor_kwargs = _processor_kwargs(config)
+    processor = AutoProcessor.from_pretrained(
+        config.model_id,
+        trust_remote_code=config.trust_remote_code,
+        **processor_kwargs,
+    )
+    if processor_kwargs:
+        print(f"{config.label} processor image limits: {processor_kwargs}")
+
+    model_kwargs: Dict[str, object] = {
+        "dtype": _torch_dtype(torch, config.dtype),
+        "device_map": "auto",
+        "trust_remote_code": config.trust_remote_code,
+    }
+    if viz_attn:
+        # Some attention backends do not materialize attention weights.
+        # When visualizing, prefer an implementation that can return weights.
+        model_kwargs["attn_implementation"] = "eager"
+
+    model = AutoModelForImageTextToText.from_pretrained(config.model_id, **model_kwargs).eval()
+    print(f"{config.label} loaded successfully.")
+    return model, processor
+
+
 def load_model(*, viz_attn: bool = False) -> Tuple[Any, Any]:
     """Load Qwen3-VL model and processor.
 
@@ -41,39 +164,7 @@ def load_model(*, viz_attn: bool = False) -> Tuple[Any, Any]:
     Returns:
         Tuple of (model, processor).
     """
-    import torch
-    from transformers import AutoModelForImageTextToText, AutoProcessor
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Loading model: {MODEL_NAME}")
-    print(f"Device: {device}")
-
-    processor_kwargs: Dict[str, object] = {}
-    qwen_max_pixels = _env_int("QWEN_MAX_PIXELS", DEFAULT_QWEN_MAX_PIXELS)
-    qwen_min_pixels = _env_int("QWEN_MIN_PIXELS")
-    if qwen_max_pixels is not None:
-        processor_kwargs["max_pixels"] = qwen_max_pixels
-    if qwen_min_pixels is not None:
-        processor_kwargs["min_pixels"] = qwen_min_pixels
-
-    processor = AutoProcessor.from_pretrained(MODEL_NAME, **processor_kwargs)
-    if processor_kwargs:
-        print(f"Qwen processor image limits: {processor_kwargs}")
-
-    model_kwargs: Dict[str, object] = {
-        "dtype": torch.float16,
-        "device_map": "auto",
-    }
-    if viz_attn:
-        # Some attention backends do not materialize attention weights.
-        # When visualizing, prefer an implementation that can return weights.
-        model_kwargs["attn_implementation"] = "eager"
-
-    model = AutoModelForImageTextToText.from_pretrained(MODEL_NAME, **model_kwargs).eval()
-
-    print("Model loaded successfully.")
-
-    return model, processor
+    return load_hf_vlm_model("qwen", viz_attn=viz_attn)
 
 
 def run_task(
@@ -92,6 +183,8 @@ def run_task(
     viz_image_id: str = "",
     viz_gt: object = None,
     viz_save_input_image: bool = False,
+    model_label: str = "Qwen",
+    max_new_tokens: Optional[int] = None,
 ) -> str:
     """Run a single VLM task.
 
@@ -132,11 +225,17 @@ def run_task(
 
     # Prepare inputs using chat template + images.
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    inputs = processor(text=[text], images=images, return_tensors="pt").to(model.device)
+    inputs = processor(
+        text=[text],
+        images=images,
+        return_tensors="pt",
+        padding=True,
+    ).to(_infer_model_device(model))
     input_ids = inputs.get("input_ids")
+    input_len = int(input_ids.shape[-1]) if input_ids is not None else 0
     image_grid = inputs.get("image_grid_thw")
     if input_ids is not None:
-        msg = f"    Qwen input tokens: {int(input_ids.shape[-1])}"
+        msg = f"    {model_label} input tokens: {int(input_ids.shape[-1])}"
         if image_grid is not None:
             grid_values = image_grid.detach().cpu().tolist()
             visual_tokens = sum(int(t) * int(h) * int(w) for t, h, w in grid_values)
@@ -149,7 +248,7 @@ def run_task(
         if viz_attn:
             gen_out = model.generate(
                 **inputs,
-                max_new_tokens=MAX_NEW_TOKENS,
+                max_new_tokens=max_new_tokens or MAX_NEW_TOKENS,
                 do_sample=False,
                 return_dict_in_generate=True,
             )
@@ -157,12 +256,13 @@ def run_task(
         else:
             output_ids = model.generate(
                 **inputs,
-                max_new_tokens=MAX_NEW_TOKENS,
+                max_new_tokens=max_new_tokens or MAX_NEW_TOKENS,
                 do_sample=False,
             )
 
     # Decode.
-    response = processor.batch_decode(output_ids, skip_special_tokens=True)[0]
+    generated_ids = output_ids[:, input_len:] if input_ids is not None else output_ids
+    response = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
     # Extract just the answer (remove the prompt echo if present).
     if prompt in response:
@@ -192,6 +292,16 @@ def run_task(
     return response
 
 
+def _infer_model_device(model: Any) -> Any:
+    device = getattr(model, "device", None)
+    if device is not None:
+        return device
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return "cuda"
+
+
 def test_sample(
     model,
     processor,
@@ -205,6 +315,9 @@ def test_sample(
     viz_attn_mode: str = "all",
     debug_dtld_boxes: bool = False,
     debug_image_out_dir: Optional[Path] = None,
+    model_key: str = "qwen",
+    model_label: str = "Qwen",
+    max_new_tokens: Optional[int] = None,
 ) -> Dict[str, str]:
     """Test all tasks on a single sample.
 
@@ -276,7 +389,7 @@ def test_sample(
         extra_images = None
         if debug_dtld_boxes and dataset_name == "dtld":
             debug_dtld_box_state(
-                prefix="Qwen",
+                prefix=model_label,
                 sample=sample,
                 task_name=task_name,
                 use_target_box=use_target_box,
@@ -286,7 +399,7 @@ def test_sample(
             if debug_image_out_dir is not None:
                 save_dtld_box_debug_images(
                     out_dir=debug_image_out_dir,
-                    model_key="qwen",
+                    model_key=model_key,
                     sample_id=sample_id,
                     task_name=task_name,
                     rgb_image=rgb_image,
@@ -338,6 +451,8 @@ def test_sample(
             viz_image_id=ann.image_id,
             viz_gt=ann.answer,
             viz_save_input_image=save_task_input_image,
+            model_label=model_label,
+            max_new_tokens=max_new_tokens,
         )
         results[task_name] = response
 
