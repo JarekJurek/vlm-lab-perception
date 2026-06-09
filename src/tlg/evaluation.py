@@ -49,7 +49,7 @@ _YES_NO_TASKS = {"tip_presence"}
 _COUNT_TASKS = {"container_count"}
 _GROUNDING_TASKS = {"liquid_grounding"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
-_NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None)}
+_NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None), "container_capacity_ml": (0.0, None)}
 _ORDINAL_TASKS = {"fill_level_ordinal"}
 _ORDINAL_VALUE = {"EMPTY": 0, "LOW": 1, "MID": 2, "HIGH": 3}
 _CLASSIFICATION_TASKS = {
@@ -59,6 +59,9 @@ _CLASSIFICATION_TASKS = {
     "highlighted_region_type",
     "liquid_color",
     "multiphase_material_presence",
+    "container_capacity_bin",
+    "container_content_bin",
+    "liquid_transfer_feasibility",
 }
 _POSITIVE_CLASS_TASKS = {"multiphase_material_presence": "YES"}
 _MATERIAL_TYPE_CHOICES = ("LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR")
@@ -1099,13 +1102,21 @@ def _quadratic_weighted_kappa(pairs: List[Tuple[int, int]]) -> Optional[float]:
 def primary_metric_for_task(task: str) -> str:
     if task == "tip_presence":
         return "balanced_accuracy"
-    if task in {"container_type", "container_type_simple", "highlighted_region_type", "liquid_color"}:
+    if task in {
+        "container_type",
+        "container_type_simple",
+        "highlighted_region_type",
+        "liquid_color",
+        "container_capacity_bin",
+        "container_content_bin",
+        "liquid_transfer_feasibility",
+    }:
         return "macro_f1"
     if task == "multiphase_material_presence":
         return "positive_f1"
     if task == "material_types_present":
         return "micro_f1"
-    if task in {"fill_percentage", "fill_height_mm", "container_count"}:
+    if task in {"fill_percentage", "fill_height_mm", "container_count", "container_capacity_ml"}:
         return "mae"
     if task == "fill_level_ordinal":
         return "ordinal_mae"

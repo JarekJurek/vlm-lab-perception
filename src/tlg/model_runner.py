@@ -517,6 +517,30 @@ def make_labeled_image_strip(images: Sequence[Any], labels: Sequence[object]) ->
 
 
 def _make_annotation_box_image(image: Any, ann: TLGAnnotation) -> Optional[Any]:
+    boxes = ann.metadata.get("bbox_boxes")
+    if isinstance(boxes, (list, tuple)) and boxes:
+        parsed_boxes = []
+        for item in boxes:
+            if not isinstance(item, dict):
+                return None
+            bbox = item.get("bbox_xyxy")
+            if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+                return None
+            try:
+                x0, y0, x1, y1 = [float(v) for v in bbox[:4]]
+            except (TypeError, ValueError):
+                return None
+            if x1 <= x0 or y1 <= y0:
+                return None
+            parsed_boxes.append(
+                (
+                    (x0, y0, x1, y1),
+                    _box_color(item.get("color")),
+                    str(item.get("label", "")).strip(),
+                )
+            )
+        return _draw_annotation_boxes(image, parsed_boxes)
+
     bbox = ann.metadata.get("bbox_xyxy")
     if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
         return None
@@ -527,3 +551,53 @@ def _make_annotation_box_image(image: Any, ann: TLGAnnotation) -> Optional[Any]:
     if x1 <= x0 or y1 <= y0:
         return None
     return make_target_box_overlay(image, image, bbox=[x0, y0, x1 - x0, y1 - y0])
+
+
+def _box_color(value: object) -> Tuple[int, int, int]:
+    name = str(value).strip().lower()
+    if name == "green":
+        return (0, 180, 70)
+    if name == "yellow":
+        return (255, 215, 0)
+    return (255, 0, 0)
+
+
+def _draw_annotation_boxes(
+    image: Any,
+    boxes: Sequence[Tuple[Sequence[float], Tuple[int, int, int], str]],
+    *,
+    width: int = 6,
+    padding: int = 4,
+) -> Any:
+    from PIL import ImageDraw, ImageFont
+
+    marked = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(marked)
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 16)
+    except OSError:
+        font = ImageFont.load_default()
+
+    for bbox, color, label in boxes:
+        x0, y0, x1, y1 = [int(round(v)) for v in bbox[:4]]
+        x0 = max(0, x0 - padding)
+        y0 = max(0, y0 - padding)
+        x1 = min(marked.width - 1, x1 + padding)
+        y1 = min(marked.height - 1, y1 + padding)
+        draw.rectangle((x0, y0, x1, y1), outline=color, width=max(1, int(width)))
+        if label:
+            _draw_box_label(draw, label, x0, y0, color, font)
+    return marked
+
+
+def _draw_box_label(draw: Any, label: str, x: int, y: int, color: Tuple[int, int, int], font: object) -> None:
+    try:
+        left, top, right, bottom = draw.textbbox((x, y), label, font=font)
+        text_w = right - left
+        text_h = bottom - top
+    except Exception:
+        text_w = max(36, len(label) * 8)
+        text_h = 14
+    label_y = max(0, y - text_h - 6)
+    draw.rectangle((x, label_y, x + text_w + 8, label_y + text_h + 6), fill=color)
+    draw.text((x + 4, label_y + 3), label, fill=(0, 0, 0), font=font)

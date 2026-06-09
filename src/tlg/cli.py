@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--datasets",
         nargs="+",
-        choices=["labliquidvision", "glasses", "dtld", "labpicsv1", "pouring", "ot2"],
+        choices=["labliquidvision", "glasses", "dtld", "labpicsv1", "pouring", "ot2", "coqe"],
         default=None,
         help=(
             "One or more datasets to evaluate. Default: labliquidvision for dataset loaders, "
@@ -137,6 +137,12 @@ def parse_args() -> argparse.Namespace:
         "--dtld-no-occlusion-filter",
         action="store_true",
         help="Disable DTLD occlusion filtering for target-object and container-count tasks.",
+    )
+    parser.add_argument(
+        "--coqe-split",
+        choices=["train", "val", "test"],
+        default="test",
+        help="COQE split to evaluate when using the COQE dataset loader. Default: test.",
     )
     parser.add_argument(
         "--tol",

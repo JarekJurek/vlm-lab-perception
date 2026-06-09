@@ -15,7 +15,7 @@ SRC_ROOT = Path(__file__).resolve().parents[2]
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from datasets.coqe import COQE_TASKS, COQEDataset, COQETaskExample  # noqa: E402
+from datasets.coqe import COQE_TASKS, COQEExpDataset, COQETaskExample  # noqa: E402
 from experimental.coqe import PROMPT_VERSION  # noqa: E402
 from experimental.coqe.metrics import aggregate_records, score_prediction  # noqa: E402
 from experimental.coqe.overlays import maybe_save_input_image, render_example_image  # noqa: E402
@@ -30,7 +30,7 @@ DEFAULT_MAX_NEW_TOKENS = 128
 
 def main() -> None:
     args = parse_args()
-    dataset = COQEDataset(
+    dataset = COQEExpDataset(
         args.data_root,
         split=args.split,
         shuffle=bool(args.shuffle),
