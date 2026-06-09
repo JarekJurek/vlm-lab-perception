@@ -1,6 +1,6 @@
 #!/bin/bash
 ### --------------- job name ------------------
-#BSUB -J qwen_labpicsv1
+#BSUB -J qwen_run_1
 
 ### --------------- queue name ----------------
 #BSUB -q gpuv100
@@ -19,8 +19,8 @@
 #BSUB -W 1:00
 
 ### --------------- output and error files ---------------
-#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_labpicsv1_%J.out
-#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_labpicsv1_%J.err
+#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_run_1_%J.out
+#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_run_1_%J.err
     
 ### --------------- send email notifications -------------
 #BSUB -u s242911@dtu.dk
@@ -53,26 +53,19 @@ export INTERNVL35_MAX_NEW_TOKENS="${INTERNVL35_MAX_NEW_TOKENS:-128}"
 export LLAVAOV2_MAX_NEW_TOKENS="${LLAVAOV2_MAX_NEW_TOKENS:-128}"
 export KIMI_VL_MAX_NEW_TOKENS="${KIMI_VL_MAX_NEW_TOKENS:-128}"
 
-# Single-model runner. Supported MODEL values:
+# Single-model runner. Supported --model values:
 #   qwen           -> Qwen/Qwen3-VL-8B-Instruct
 #   sdvlm          -> cpystan/SD-VLM-7B; add --sdvlm-gt-depth or --sdvlm-depth-dir if needed
 #   internvl35_8b  -> OpenGVLab/InternVL3_5-8B
 #   llavaov2_8b    -> lmms-lab-encoder/LLaVA-OneVision-2-8B-Instruct
 #   kimi_vl_a3b    -> moonshotai/Kimi-VL-A3B-Thinking-2506
-#
-# Example one-off submission for a different model/dataset:
-#   MODEL=llavaov2_8b DATASET=dtld MAX_SAMPLES=50 bsub < hpc_scripts/run.sh
-MODEL="${MODEL:-qwen}"
-DATASET="${DATASET:-labpicsv1}"
-MAX_SAMPLES="${MAX_SAMPLES:-500}"
-OUT_DIR="${OUT_DIR:-bakery/${MODEL}_${DATASET}}"
-mkdir -p "${OUT_DIR}"
+mkdir -p bakery/qwen_run_1
 
 python3 run_vlm_tasks.py \
-    --datasets "${DATASET}" \
-    --max-samples "${MAX_SAMPLES}" \
+    --datasets labliquidvision glasses dtld labpicsv1 pouring ot2 \
+    --max-samples 500 \
     --shuffle \
     --seed 42 \
-    --model "${MODEL}" \
-    --predictions-out "${OUT_DIR}/preds.jsonl" \
-    --metrics-out "${OUT_DIR}/metrics.json"
+    --model qwen \
+    --predictions-out bakery/qwen_run_1/preds.jsonl \
+    --metrics-out bakery/qwen_run_1/metrics.json
