@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+from datasets.coqe import COQEDataset
 from datasets.dtld import DTLDDataset
 from datasets.glassesinthewild import GlassesInTheWildDataset
 from datasets.labliquidvision import LabLiquidVisionDataset
@@ -21,6 +22,7 @@ DATA_ROOTS = {
     "labpicsv1": Path("data") / "LabPicsV1",
     "pouring": Path("data") / "pouring",
     "ot2": Path("data") / "OT2-Computer-Vision",
+    "coqe": Path("data") / "COQE_dataset",
 }
 def build_dataset(
     dataset_name: str,
@@ -32,6 +34,7 @@ def build_dataset(
     seed: Optional[int] = None,
     debug_dtld_boxes: bool = False,
     dtld_no_occlusion_filter: bool = False,
+    coqe_split: str = "test",
 ) -> Any:
     """Construct a dataset instance for a given dataset name.
 
@@ -73,4 +76,6 @@ def build_dataset(
         return PouringFrameOrderingDataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     if dataset_name == "ot2":
         return OT2Dataset(data_root, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
+    if dataset_name == "coqe":
+        return COQEDataset(data_root, split=coqe_split, prompt_bank=prompt_bank, shuffle=shuffle, seed=seed)
     raise ValueError(f"Unsupported dataset: {dataset_name}")

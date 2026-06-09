@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
+from tlg import PromptBank, TLGAnnotation
+
 
 COQE_VOLUME_LABELS: Mapping[int, str] = {
     1: "0_50_ml",
@@ -52,6 +54,12 @@ COQE_POUR_LABELS: Mapping[int, Union[float, str]] = {
 }
 
 COQE_TASKS = ("volume", "content", "comparative", "pouring")
+COQE_TLG_TASKS = (
+    "container_capacity_ml",
+    "container_capacity_bin",
+    "container_content_bin",
+    "liquid_transfer_feasibility",
+)
 _POUR_TIMESTEP_KEYS = ("t0_content", "t1_content", "t2_content", "t3_content", "t4_content")
 _DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
 
@@ -121,7 +129,7 @@ class COQETaskExample:
         return out
 
 
-class COQEDataset:
+class COQEExpDataset:
     """Reusable loader for COQE annotations and task examples.
 
     The base split JSON contains one record per annotated container. Adjacent
@@ -300,6 +308,123 @@ class COQEDataset:
         return out
 
 
+class COQEDataset:
+    """Benchmark-facing COQE dataset with native TLG annotations."""
+
+    def __init__(
+        self,
+        root: Union[str, Path],
+        *,
+        split: str = "test",
+        prompt_bank: Optional[PromptBank] = None,
+        tasks: Sequence[str] = COQE_TLG_TASKS,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
+    ) -> None:
+        self._dataset = COQEExpDataset(root, split=split, shuffle=False)
+        self.root = self._dataset.root
+        self.split = self._dataset.split
+        self._prompt_bank = prompt_bank or PromptBank.default()
+        task_set = _normalize_tlg_tasks(tasks)
+
+        entries: List[Tuple[str, COQERecord]] = []
+        for task in task_set:
+            if task == "liquid_transfer_feasibility":
+                entries.extend(
+                    (task, record)
+                    for record in self._dataset.records
+                    if record.image_id in self._dataset.pairs_by_image_id
+                )
+            else:
+                entries.extend((task, record) for record in self._dataset.records)
+
+        if shuffle:
+            rng = random.Random(seed)
+            rng.shuffle(entries)
+        self._entries = entries
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def __iter__(self) -> Iterator[Dict[str, object]]:
+        for idx in range(len(self)):
+            yield self[idx]
+
+    def __getitem__(self, index: int) -> Dict[str, object]:
+        task, record = self._entries[index]
+        sample_id = f"{record.id}/{task}"
+        ann = self._build_annotation(task, record, sample_id)
+        return {
+            "id": sample_id,
+            "image_id": record.image_id,
+            "rgb_image": record.image_path,
+            "split": self.split,
+            "primary_task": task,
+            "annotations": [ann],
+        }
+
+    def task_counts(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for task, _record in self._entries:
+            counts[task] = counts.get(task, 0) + 1
+        return counts
+
+    def _build_annotation(self, task: str, record: COQERecord, sample_id: str) -> TLGAnnotation:
+        spec = self._prompt_bank.get("coqe", task)
+        answer: object
+        metadata: Dict[str, object] = {
+            "task": task,
+            "source_image_id": record.image_id,
+            "source_bbox_xyxy": list(record.bbox_xyxy),
+            "source_bbox_xywh": list(record.bbox_xywh),
+            "category": record.category,
+            "cad_model": record.cad_model,
+        }
+
+        if task == "container_capacity_ml":
+            answer = float(record.volume_continuous)
+            metadata["bbox_xyxy"] = list(record.bbox_xyxy)
+            metadata["volume_discrete"] = record.volume_class
+        elif task == "container_capacity_bin":
+            answer = record.volume_label
+            metadata["bbox_xyxy"] = list(record.bbox_xyxy)
+            metadata["volume_continuous"] = float(record.volume_continuous)
+            metadata["volume_discrete"] = record.volume_class
+        elif task == "container_content_bin":
+            answer = record.content_label
+            metadata["bbox_xyxy"] = list(record.bbox_xyxy)
+            metadata["content_class"] = record.content_class
+        elif task == "liquid_transfer_feasibility":
+            target = self._dataset.pairs_by_image_id.get(record.image_id)
+            if target is None:
+                raise ValueError(f"Missing COQE comparative target for {record.image_id}")
+            answer = record.comparative_label
+            metadata.update(
+                {
+                    "target_image_id": target.image_id,
+                    "target_bbox_xyxy": list(target.bbox_xyxy),
+                    "target_bbox_xywh": list(target.bbox_xywh),
+                    "comparative_class": record.comparative_class,
+                    "bbox_boxes": [
+                        {"bbox_xyxy": list(record.bbox_xyxy), "label": "SOURCE", "color": "red"},
+                        {"bbox_xyxy": list(target.bbox_xyxy), "label": "TARGET", "color": "green"},
+                    ],
+                }
+            )
+        else:
+            raise ValueError(f"Unknown COQE TLG task: {task!r}")
+
+        return TLGAnnotation(
+            image_id=sample_id,
+            dataset="coqe",
+            task_type=str(spec.get("task_type", task)),
+            question=str(spec["question"]),
+            choices=spec.get("choices"),
+            answer=answer,
+            metadata=metadata,
+        )
+
+
 def pour_sequence_from_raw(row: Mapping[str, Any]) -> List[Union[float, str]]:
     sequence: List[Union[float, str]] = []
     for key in _POUR_TIMESTEP_KEYS:
@@ -313,6 +438,14 @@ def _normalize_tasks(tasks: Sequence[str]) -> Tuple[str, ...]:
     unknown = sorted(set(out) - set(COQE_TASKS))
     if unknown:
         raise ValueError(f"Unknown COQE task(s): {', '.join(unknown)}")
+    return out
+
+
+def _normalize_tlg_tasks(tasks: Sequence[str]) -> Tuple[str, ...]:
+    out = tuple(str(t).strip() for t in tasks if str(t).strip())
+    unknown = sorted(set(out) - set(COQE_TLG_TASKS))
+    if unknown:
+        raise ValueError(f"Unknown COQE TLG task(s): {', '.join(unknown)}")
     return out
 
 

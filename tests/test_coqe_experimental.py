@@ -11,9 +11,9 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 from datasets.coqe import (  # noqa: E402
     COQE_COMPARATIVE_LABELS,
     COQE_CONTENT_LABELS,
+    COQEExpDataset,
     COQE_POUR_LABELS,
     COQE_VOLUME_LABELS,
-    COQEDataset,
 )
 from experimental.coqe.metrics import aggregate_records, edit_distance, score_prediction  # noqa: E402
 from experimental.coqe.parsing import parse_prediction  # noqa: E402
@@ -39,7 +39,7 @@ class COQEExperimentalTest(unittest.TestCase):
         self.assertEqual(COQE_POUR_LABELS[12], "opaque")
 
     def test_test_split_counts_and_pouring_distribution(self) -> None:
-        dataset = COQEDataset(COQE_ROOT, split="test")
+        dataset = COQEExpDataset(COQE_ROOT, split="test")
         self.assertEqual(len(dataset.records), 3000)
         self.assertEqual(len(dataset.pour_records), 15000)
         self.assertEqual(dataset.task_counts(), {
@@ -51,7 +51,7 @@ class COQEExperimentalTest(unittest.TestCase):
         self.assertEqual(dataset.pouring_records_per_image_distribution(), {5: 3000})
 
     def test_comparative_pairing_is_directional(self) -> None:
-        dataset = COQEDataset(COQE_ROOT, split="test")
+        dataset = COQEExpDataset(COQE_ROOT, split="test")
         first = dataset.records[10]
         second = dataset.pairs_by_image_id[first.image_id]
         self.assertEqual(first.image_id, "07606.png")
@@ -66,7 +66,7 @@ class COQEExperimentalTest(unittest.TestCase):
         self.assertEqual(ex.answer, "yes")
 
     def test_prompts_include_corrections(self) -> None:
-        dataset = COQEDataset(COQE_ROOT, split="test")
+        dataset = COQEExpDataset(COQE_ROOT, split="test")
         volume = next(dataset.iter_examples(["volume"]))
         volume_prompt = build_prompt(volume)
         self.assertIn("0 mL <= volume < 50 mL", volume_prompt)

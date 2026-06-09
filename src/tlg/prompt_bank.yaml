@@ -3,6 +3,12 @@ target_region_bbox_prompt:
     The target region is inside the red bounding box.
     Answer only about the boxed region and ignore all other regions in the image.
 
+source_target_bbox_prompt:
+  question: |
+    The source container is inside the red bounding box.
+    The target container is inside the green bounding box.
+    Answer only about these marked containers and ignore all other containers in the image.
+
 
 pipette_tip_group_context_prompt:
   question: |
@@ -80,6 +86,54 @@ fill_height_mm:
     Ignore caps, labels, glare, shadows, and background objects. If the liquid boundary is uncertain, provide your best visual estimate.
 
     Output format: only one number in millimeters. Do not include units, explanation, punctuation, or extra text.
+
+container_capacity_ml:
+  task_type: "Container Capacity Estimation (continuous_ml)"
+  question: |
+    You are analyzing an image of a liquid container.
+
+    Your task is to estimate the total capacity of the marked container in milliliters when it is completely full. Estimate the container capacity, not the amount of liquid currently inside it.
+    Use visual scale cues from the whole image, including surrounding objects, container shape, and scene context.
+
+    Output format: only one number in milliliters. Do not include units, explanation, punctuation, or extra text.
+
+container_capacity_bin:
+  task_type: "Container Capacity Estimation (classification)"
+  question: |
+    You are analyzing an image of a liquid container.
+
+    Your task is to classify the total capacity of the marked container when it is completely full. Estimate the container capacity, not the amount of liquid currently inside it.
+
+    Options: 0_50_ml, 50_100_ml, 100_200_ml, 200_300_ml, 300_500_ml, 500_750_ml, 750_1000_ml, 1000_2000_ml, 2000_3000_ml, 3000_inf_ml.
+    Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
+  choices: ["0_50_ml", "50_100_ml", "100_200_ml", "200_300_ml", "300_500_ml", "500_750_ml", "750_1000_ml", "1000_2000_ml", "2000_3000_ml", "3000_inf_ml"]
+
+container_content_bin:
+  task_type: "Container Content Estimation (classification)"
+  question: |
+    You are analyzing an image of a liquid container.
+
+    Your task is to classify how full the marked container is as a fraction of its total capacity.
+    Use visible cues such as the liquid surface line, color change, transparency, reflections, and container opacity. If the container is opaque and the amount of liquid inside cannot be visually estimated, choose opaque.
+
+    Options: 0_percent, 33_percent, 50_percent, 66_percent, 100_percent, opaque.
+    Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
+  choices: ["0_percent", "33_percent", "50_percent", "66_percent", "100_percent", "opaque"]
+
+liquid_transfer_feasibility:
+  task_type: "Liquid Transfer Feasibility (classification)"
+  question: |
+    You are analyzing an image with two marked liquid containers.
+
+    Your task is to determine whether the entire liquid content of the source container can be poured into the target container without overflowing.
+    Estimate how much liquid is currently in the source container, how much free capacity remains in the target container, and whether the source liquid can fit into the target container.
+    Choose yes only if all liquid currently in the source container can fit into the remaining empty space of the target container.
+    Choose no if it would overflow.
+    Choose cant_tell if at least one relevant container is opaque or the liquid amount cannot be visually estimated.
+
+    Options: yes, no, cant_tell.
+    Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
+  choices: ["yes", "no", "cant_tell"]
 
 liquid_color:
   task_type: "Liquid Color Recognition (classification)"
