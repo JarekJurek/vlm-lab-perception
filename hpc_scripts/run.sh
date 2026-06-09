@@ -45,7 +45,7 @@ export OPENBLAS_NUM_THREADS=4
 export NUMEXPR_NUM_THREADS=4
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Qwen-VL memory is dominated by visual tokens. LabPicsV1 contains larger
+# Qwen-VL memory is dominated by visual tokens. LabPics Chemistry contains larger
 # source images than the other datasets, so cap processor pixels for 16 GB GPUs.
 export QWEN_MAX_PIXELS=$((512 * 28 * 28))
 export QWEN_MAX_NEW_TOKENS=128
@@ -62,7 +62,7 @@ export KIMI_VL_MAX_NEW_TOKENS="${KIMI_VL_MAX_NEW_TOKENS:-128}"
 mkdir -p bakery/qwen_run_1
 
 python3 run_vlm_tasks.py \
-    --datasets labliquidvision glasses dtld labpicsv1 pouring ot2 \
+    --datasets labliquidvision glasses dtld labpics_chemistry pouring ot2 \
     --max-samples 500 \
     --shuffle \
     --seed 42 \

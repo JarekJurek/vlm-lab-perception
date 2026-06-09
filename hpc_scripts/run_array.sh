@@ -56,7 +56,7 @@ DATASETS=(
     labliquidvision
     glasses
     dtld
-    labpicsv1
+    labpics_chemistry
     pouring
     ot2
 )

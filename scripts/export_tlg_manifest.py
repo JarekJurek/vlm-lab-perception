@@ -13,7 +13,6 @@ from typing import Any, Dict, Iterable, List, Optional
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from datasets.labpicsv1 import LabPicsV1Dataset
 from tlg import PromptBank
 from tlg.cli import parse_data_root_overrides
 from tlg.dataset_factory import DATA_ROOTS, build_dataset
@@ -51,6 +50,12 @@ def parse_args() -> argparse.Namespace:
         default=0.8,
         help="Generated train split ratio per dataset. Default: 0.8.",
     )
+    parser.add_argument(
+        "--labpics-chemistry-split",
+        choices=["train", "test", "all"],
+        default="all",
+        help="LabPics Chemistry split to export. Default: all.",
+    )
     return parser.parse_args()
 
 
@@ -80,6 +85,7 @@ def main() -> None:
                 data_root,
                 prompt_bank=prompt_bank,
                 limit=args.max_samples_per_dataset,
+                labpics_chemistry_split=str(args.labpics_chemistry_split),
             )
         )
         print(f"  valid samples with annotations: {len(valid_samples)}")
@@ -129,9 +135,15 @@ def _iter_valid_samples(
     *,
     prompt_bank: PromptBank,
     limit: Optional[int] = None,
+    labpics_chemistry_split: str = "all",
 ):
     yielded = 0
-    for dataset in _source_datasets(dataset_name, data_root, prompt_bank=prompt_bank):
+    for dataset in _source_datasets(
+        dataset_name,
+        data_root,
+        prompt_bank=prompt_bank,
+        labpics_chemistry_split=labpics_chemistry_split,
+    ):
         for idx in range(len(dataset)):
             try:
                 sample = dataset[idx]
@@ -146,12 +158,13 @@ def _iter_valid_samples(
                     return
 
 
-def _source_datasets(dataset_name: str, data_root: Path, *, prompt_bank: PromptBank) -> Iterable[Any]:
-    if dataset_name == "labpicsv1":
-        return [
-            LabPicsV1Dataset(data_root, split="train", prompt_bank=prompt_bank),
-            LabPicsV1Dataset(data_root, split="test", prompt_bank=prompt_bank),
-        ]
+def _source_datasets(
+    dataset_name: str,
+    data_root: Path,
+    *,
+    prompt_bank: PromptBank,
+    labpics_chemistry_split: str = "all",
+) -> Iterable[Any]:
     return [
         build_dataset(
             dataset_name,
@@ -160,6 +173,7 @@ def _source_datasets(dataset_name: str, data_root: Path, *, prompt_bank: PromptB
             include_depth=False,
             shuffle=False,
             seed=None,
+            labpics_chemistry_split=labpics_chemistry_split,
         )
     ]
 

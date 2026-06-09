@@ -14,7 +14,7 @@ from tlg.evaluation import TaskStats, score_prediction
 def _material_annotation(answer: str) -> TLGAnnotation:
     return TLGAnnotation(
         image_id="sample",
-        dataset="labpicsv1",
+        dataset="labpics_chemistry",
         task_type="Material Type Presence (multi-label)",
         question="Which material types are present?",
         answer=answer,

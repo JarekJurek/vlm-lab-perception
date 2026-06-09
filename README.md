@@ -72,7 +72,7 @@ By default, the runner looks for datasets under `data/`:
 | `labliquidvision` | `data/LabLiquidVision` |
 | `glasses` | `data/glasses_in_the_wild/glasses_in_the_wild_1000` |
 | `dtld` | `data/DTLD_dataset` |
-| `labpicsv1` | `data/LabPicsV1` |
+| `labpics_chemistry` | `data/LabPics Chemistry` |
 | `pouring` | `data/pouring` |
 | `ot2` | `data/OT2-Computer-Vision` |
 
@@ -124,7 +124,7 @@ Useful flags:
 
 | Flag | Description |
 | --- | --- |
-| `--datasets` | Dataset keys to evaluate. Choices: `labliquidvision`, `glasses`, `dtld`, `labpicsv1`, `pouring`, `ot2`. |
+| `--datasets` | Dataset keys to evaluate. Choices: `labliquidvision`, `glasses`, `dtld`, `labpics_chemistry`, `pouring`, `ot2`, `coqe`. |
 | `--model` | One model key to run in this process. |
 | `--dry-run` | Validate loading and standardized annotations without loading a model. |
 | `--max-samples N` | Cap samples per dataset, or per task for task-aware datasets such as `pouring`. |

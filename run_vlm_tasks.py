@@ -183,6 +183,7 @@ def main():
                 debug_dtld_boxes=debug_dtld_boxes,
                 dtld_no_occlusion_filter=bool(args.dtld_no_occlusion_filter),
                 coqe_split=str(args.coqe_split),
+                labpics_chemistry_split=str(args.labpics_chemistry_split),
             )
         print(f"Dataset size: {len(dataset)}")
         task_pool_counts = _primary_task_counts(dataset)
@@ -488,7 +489,8 @@ def _record_results(
                 "model": model_key,
                 "dataset": dataset_name,
                 "sample_id": sample.get("id", "unknown"),
-                "image_id": ann.image_id,
+                "image_id": sample.get("image_id", ann.image_id),
+                "annotation_id": ann.image_id,
                 "task": rec.get("task"),
                 "task_type": rec.get("task_type"),
                 "question": rec.get("question"),
