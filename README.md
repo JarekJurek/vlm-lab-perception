@@ -1,275 +1,190 @@
-# TLG (Transparent Liquid Gauge): A Benchmark for Vision–Language Models in Transparent Liquid Perception
+# TLG: Transparent Liquid Gauge
 
-TLG is a multi-task vision–language benchmark designed to evaluate Vision–Language Models (VLMs) on perception and reasoning tasks involving transparent liquid containers. The benchmark focuses on challenges specific to transparency, including ambiguous liquid boundaries, reflections, refractions, multi-phase materials, and fine-grained fill-level estimation.
+TLG is a codebase for evaluating vision-language models on transparent liquid
+perception tasks: fill level estimation, container recognition, counting,
+liquid grounding, material reasoning, and temporal pouring order.
 
-## Dataset Sources and Alignment
+The project is currently organized around two practical workflows:
 
-TLG integrates and standardizes complementary datasets that provide reliable supervision for liquid perception and grounding tasks:
+1. run the current dataset loaders directly with `run_vlm_tasks.py`;
+2. export a reproducible JSON manifest and evaluate from that manifest.
 
-**LabLiquidVision**  
-Controlled laboratory images of single vessels (e.g., beakers, flasks) with precise volume metadata.  
-Provides:
+The root runner supports Qwen3-VL, SD-VLM, and several open Hugging Face VLMs.
+COQE/Qwen evaluation is kept as an experimental workflow under
+`src/experimental/coqe`.
 
-- Vessel type labels  
-- Liquid color labels  
-- Exact liquid and vessel volumes (mL) – precise fill percentage  
-- Optional vessel/content masks and depth maps
+## Quick Start
 
-This dataset supports **quantitative fill estimation** and structured container recognition.  
-
-**Glasses in the Wild**  
-Real-world drinking glass images with annotated geometry and fluid-level keypoints.  
-Provides:
-
-- Glass geometry keypoints  
-- Fluid-level keypoints  
-- Derived fill percentage  
-- Visibility flags
-
-This dataset supports surface localization and robustness to viewpoint and lighting variation.
-
-**DTLD**  
-Reflection- and refraction-heavy RGB scenes of transparent containers.  
-Provides:
-
-- Object identities and bounding boxes  
-- Liquid height in millimeters (when available)  
-- Visible masks and optional depth  
-- Liquid label points
-
-This dataset supports grounding and robustness under strong transparency artifacts.
-
-**Pouring (Video Dataset)**
-Video-centric dataset of cup/container filling/pouring sequences (separate opaque vs transparent training; separate test videos).
-Provides:
-
-- RGB frames organized by video folders
-- Test split: per-frame LabelMe-style JSON polygon annotations plus sidecar pixel labels (`label.png`, `label_viz.png`, `label_names.txt`)
-- Training split: RGB sequences plus empty-cup reference frames and per-frame cup masks (`*_cup_mask.png`) in dedicated mask folders
-- Natural “sequence” structure via `video_#` directories for frame-by-frame temporal sampling
-
-This dataset currently supports single-frame liquid grounding and four-frame pouring frame ordering. When both tasks are enabled, TLG treats them as separate evaluation units: one sample per annotated frame for liquid grounding and a label-balanced subset of frame-ordering samples.
-
-**OT2 (Tips + Liquid)**
-YOLO-style object detection dataset built from lab videos exported frame-by-frame.
-Provides:
-- RGB frames split into train/, valid/, test/
-- YOLO.txt labels per frame with normalized bounding boxes
-- Two classes: Tip and Liquid (multi-instance per frame)
-- Heuristic “sequence” grouping via filename patterns (e.g., *_###)
-
-This dataset supports detection, counting, and per-sequence qualitative analysis of tips and liquid regions in lab scenes.
-
-### Datasets not included in V1 of the benchmark:
-
-**COQE (Container and Quantity Estimation)** – not in the laboratory setting
-Provides container bounding boxes, category labels, and continuous/discrete volume annotations.  
-Useful for benchmarking quantitative reasoning and comparative volume estimation.
-
-**Liquid Level Detection** – not in the laboratory setting
-Provides segmentation masks of liquid regions (COCO-style RLE).  
-Useful for liquid-region grounding tasks.
-
-**LabPicsV1** – annotations not too relevant to our case
-Provides instance and semantic segmentation masks of materials in laboratory scenes, including multi-phase annotations.  
-Useful for material reasoning and multi-phase detection.
-
-## Dataset Composition
-
-TLG converts heterogeneous annotations (volumes, keypoints, masks, bounding boxes) into a unified Vision–Language Question Answering (VQA) format inspired by structured medical VLM benchmarks.
-
-Example:  
-```json
-{
-    "image_id": "...",
-    "dataset": "...",
-    "task_type": "...",
-    "question": "...",
-    "choices": [...],        # optional (for MCQ tasks)
-    "answer": "...",         # categorical or numeric
-    "metadata": {...}        # original GT references
-}
-```
-
-For LabLiquidVision:  
-```json
-{  
-    "image_id": "LLV_01234",
-    "dataset": "LabLiquidVision",
-    "task_type": "Fill-Level Estimation (continuous)",
-    "question": "Estimate the fill level of the liquid in this container as a percentage (0–100).",
-    "answer": 50,
-    "metadata": {
-        "vol_liquid": 150,
-        "vol_vessel": 300,
-        "derived_fill_percentage": 50
-        }
-}
-```
-
-Each evaluation sample is associated with one or more structured prompts derived directly from available ground truth. Most datasets use one image per sample; pouring frame ordering uses a labeled four-frame strip. Tasks are only defined when reliable supervision exists in the source dataset.
-
-## Task Categories
-
-### Container Type Recognition (CTR)
-
-Identify the type of transparent container shown.  
-Closed vocabulary derived from dataset labels (e.g., beaker, flask, wine glass, tumbler).  
-Task type: **multi-class classification.**
-
-### Pouring Change Detection (PCD)
-
-Compare two frames from the same pouring sequence and determine whether the visible liquid amount stayed the same, increased, or decreased.  
-Output vocabulary: `NO_CHANGE`, `LIQUID_INCREASED`, `LIQUID_DECREASED`.  
-Task type: **multi-class classification.**
-
-### Fill-Level Estimation (FLE)
-
-Two evaluation modes depending on dataset:
-
-- **Continuous Regression:**  
-  Percentage derived from liquid and vessel volumes (LabLiquidVision) or liquid height (DTLD).  
-- **Ordinal Classification:**  
-  Discretized levels (EMPTY, LOW, MID, HIGH, FULL).
-
-Task type: regression and/or multi-class classification.
-
-### Visual Grounding (VG)
-
-Given a bounding box or segmentation overlay, identify the highlighted region  
-(e.g., liquid region, container body, reflection artifact, background).  
-Derived from segmentation masks (Roboflow, LabPicsV1, DTLD).  
-Task type: grounded multi-class classification.
-
-### Multi-Phase and Material Reasoning (MMR)
-
-Identify whether multiple liquid phases or materials are present.  
-Supported by LabPicsV1 instance/material metadata.  
-Task type: multi-class classification.
-
-### Transparency Robustness Evaluation (TRE)
-
-Evaluate performance degradation under strong reflections and refractions.  
-Measured via DTLD subset performance compared to controlled lab images.  
-Task type: cross-domain evaluation rather than a standalone question type.
-
-## Evaluation Protocol
-
-Tasks are formulated as:
-
-- Multiple-choice questions (MCQs)  
-- Structured categorical outputs  
-- Numeric regression outputs (where continuous ground truth exists)
-
-Reported metrics include:
-
-- Parse rate  
-- Overall and per-task accuracy  
-- Mean Absolute Error (for continuous fill estimation)  
-- Within-tolerance accuracy for numeric tasks when a tolerance is configured
-- Per-dataset breakdowns when multiple datasets are evaluated
-
-## Core Objective
-
-TLG evaluates whether VLMs can:
-
-- Perform quantitative reasoning on transparent liquid quantities  
-- Localize liquid regions under transparency  
-- Distinguish true liquid boundaries from reflection artifacts  
-- Generalize across controlled laboratory and unconstrained real-world environments  
-- Handle multi-phase materials and fine-grained spatial cues
-
-TLG provides a structured and reproducible evaluation framework for multimodal reasoning in transparent liquid perception, enabling systematic comparison between general-purpose VLMs and domain-adapted models.
-
-## Project structure
-
-- `src/datasets/labliquidvision`: `LabLiquidVisionDataset`
-- `src/datasets/glassesinthewild`: `GlassesInTheWildDataset`
-- `src/datasets/dtld`: `DTLDDataset`
-- `src/datasets/pouring`: `PouringDataset`, `PouringFrameOrderingDataset`
-- `src/datasets/ot2`: `OT2Dataset`
-- `src/tlg/prompt_bank.yaml`: prompt definitions (prompt_id -> question/choices)
-- `src/tlg/dataset_prompts.yaml`: dataset -> included tasks, with optional overrides
-- `run_vlm_tasks.py`: VLM task evaluator across datasets
-- `notebooks/`: dataset preview notebooks
-- `hpc_scripts/`: helper scripts for HPC setup and runs
-- `data/`: dataset roots
-
-## Requirements
-
-Install dependencies:
+Install the Python dependencies from the repository root:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Main runtime packages include `numpy`, `matplotlib`, `torch`, `transformers`, and `Pillow`.
-
-## Usage
-
-### 1) Load datasets
-
-From repo root:
-
-```python
-import sys
-sys.path.insert(0, "src")
-
-from datasets.labliquidvision import LabLiquidVisionDataset
-from datasets.glassesinthewild import GlassesInTheWildDataset
-from datasets.dtld import DTLDDataset
-from datasets.pouring import PouringFrameOrderingDataset
-from datasets.ot2 import OT2Dataset
-
-lab_ds = LabLiquidVisionDataset("data/LabLiquidVision", rgb_only=True)
-glasses_ds = GlassesInTheWildDataset("data/glasses_in_the_wild/glasses_in_the_wild_1000")
-dtld_ds = DTLDDataset("data/DTLD_dataset", rgb_only=True)
-pouring_ds = PouringFrameOrderingDataset("data/pouring")
-ot2_ds = OT2Dataset("data/OT2-Computer-Vision")
-
-sample = lab_ds[0]
-print(sample["id"], sample.get("vol_liquid"), sample.get("rgb_image"))
-```
-
-### 2) Run VLM tasks
-
-Evaluate one or more datasets:
+Run a loader-only validation pass before loading a model:
 
 ```bash
-python run_vlm_tasks.py --datasets labliquidvision
-python run_vlm_tasks.py --datasets labliquidvision glasses dtld pouring ot2
+python run_vlm_tasks.py --dry-run --datasets labliquidvision --max-samples 3
 python run_vlm_tasks.py --dry-run --datasets pouring --max-samples 3 --shuffle --seed 42
 ```
 
-Default model in the script: `Qwen/Qwen3-VL-8B-Instruct`.
+Run Qwen3-VL on one dataset:
 
-By default, the runner processes all available samples. Use `--max-samples N` to cap evaluation. For ordinary datasets the cap is per dataset; for datasets with task-specific sample units (currently pouring), the cap is applied per task. For example, with both pouring tasks enabled, `--max-samples 200` selects up to 200 liquid-grounding frame samples and up to 200 label-balanced pouring-change pair samples.
+```bash
+python run_vlm_tasks.py \
+    --datasets labliquidvision \
+    --model qwen \
+    --max-samples 20 \
+    --shuffle \
+    --seed 42 \
+    --predictions-out results/qwen_labliquidvision_preds.jsonl \
+    --metrics-out results/qwen_labliquidvision_metrics.json
+```
 
-Useful runner flags:
+Run one of the additional open VLMs:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--datasets` | `labliquidvision` | One or more datasets: `labliquidvision`, `glasses`, `dtld`, `pouring`, `ot2` |
-| `--dry-run` | off | Validate dataset loading and standardized annotations without loading a model |
-| `--max-samples` | all | Cap samples per dataset or per task for task-aware datasets |
-| `--shuffle` | off | Shuffle before applying `--max-samples` |
-| `--seed` | `0` | Seed used with `--shuffle` |
-| `--predictions-out` | unset | Write per-task JSONL predictions |
-| `--metrics-out` | unset | Write aggregated metrics JSON |
+```bash
+python run_vlm_tasks.py --datasets dtld --model internvl35_8b --max-samples 20
+python run_vlm_tasks.py --datasets pouring --model llavaov2_8b --max-samples 20
+python run_vlm_tasks.py --datasets ot2 --model kimi_vl_a3b --max-samples 20
+```
 
-Supported `--model` values are `qwen`, `sdvlm`, `internvl35_8b`,
-`llavaov2_8b`, and `kimi_vl_a3b`. The evaluator runs one model per process;
-use the HPC array scripts to cover multiple models and datasets.
+Supported `--model` values:
 
-### 3) Run SD-VLM tasks
+| Model key | Default model ID |
+| --- | --- |
+| `qwen` | `Qwen/Qwen3-VL-8B-Instruct` |
+| `sdvlm` | `cpystan/SD-VLM-7B` |
+| `internvl35_8b` | `OpenGVLab/InternVL3_5-8B` |
+| `llavaov2_8b` | `lmms-lab-encoder/LLaVA-OneVision-2-8B-Instruct` |
+| `kimi_vl_a3b` | `moonshotai/Kimi-VL-A3B-Thinking-2506` |
 
-[SD-VLM](https://github.com/cpystan/SD-VLM) is a depth-encoded VLM built on LLaVA-1.5-7B.
-It can leverage the depth maps stored in LabLiquidVision (`Input_DepthMap.npy`) to provide
-spatially-aware reasoning.
+You can override Hugging Face model IDs with environment variables:
+`QWEN_MODEL_ID`, `INTERNVL35_MODEL_ID`, `LLAVAOV2_MODEL_ID`, and
+`KIMI_VL_MODEL_ID`.
 
-#### Install SD-VLM
+## Dataset Roots
 
-SD-VLM ships its own version of the `llava` package.  Install it from source:
+By default, the runner looks for datasets under `data/`:
+
+| Dataset key | Default root |
+| --- | --- |
+| `labliquidvision` | `data/LabLiquidVision` |
+| `glasses` | `data/glasses_in_the_wild/glasses_in_the_wild_1000` |
+| `dtld` | `data/DTLD_dataset` |
+| `labpicsv1` | `data/LabPicsV1` |
+| `pouring` | `data/pouring` |
+| `ot2` | `data/OT2-Computer-Vision` |
+
+Override roots with one or more `--data-root` flags:
+
+```bash
+python run_vlm_tasks.py \
+    --dry-run \
+    --datasets labliquidvision dtld \
+    --data-root labliquidvision=/path/to/LabLiquidVision \
+    --data-root dtld=/path/to/DTLD_dataset
+```
+
+Some dataset folders include convenience sync scripts, for example
+`src/datasets/labliquidvision/sync_dataset.sh`,
+`src/datasets/dtld/sync_dataset.sh`, and `src/datasets/coqe/sync_dataset.sh`.
+Those scripts are environment-specific helpers rather than required runtime
+APIs.
+
+## Runner Usage
+
+`run_vlm_tasks.py` is the main evaluator. It loads standardized annotations
+from the selected dataset loaders, asks the selected VLM each task prompt,
+parses the response, and reports task-level metrics.
+
+Common commands:
+
+```bash
+# Default dataset is labliquidvision when no manifest is used.
+python run_vlm_tasks.py --dry-run
+
+# Evaluate multiple datasets in one process.
+python run_vlm_tasks.py --datasets labliquidvision glasses dtld pouring ot2
+
+# Write predictions and aggregate metrics.
+python run_vlm_tasks.py \
+    --datasets labliquidvision \
+    --predictions-out results/preds.jsonl \
+    --metrics-out results/metrics.json
+
+# Change numeric scoring tolerance for selected tasks.
+python run_vlm_tasks.py \
+    --datasets labliquidvision dtld \
+    --tol fill_percentage=2.5 \
+    --tol fill_height_mm=10
+```
+
+Useful flags:
+
+| Flag | Description |
+| --- | --- |
+| `--datasets` | Dataset keys to evaluate. Choices: `labliquidvision`, `glasses`, `dtld`, `labpicsv1`, `pouring`, `ot2`. |
+| `--model` | One model key to run in this process. |
+| `--dry-run` | Validate loading and standardized annotations without loading a model. |
+| `--max-samples N` | Cap samples per dataset, or per task for task-aware datasets such as `pouring`. |
+| `--shuffle --seed N` | Shuffle samples deterministically before capping. |
+| `--predictions-out PATH` | Write per-task JSONL records with prediction and ground truth. |
+| `--metrics-out PATH` | Write aggregate metrics JSON. |
+| `--data-root dataset=/path` | Override a dataset root. Can be repeated. |
+| `--tol task=value` | Override numeric within-tolerance scoring. Can be repeated. |
+
+For `pouring`, `--max-samples` is applied per task. For example,
+`--max-samples 200` selects up to 200 liquid-grounding frame samples and up to
+200 pouring-frame-ordering samples.
+
+## Manifest Workflow
+
+Use manifests when you want a stable, shareable evaluation set that is decoupled
+from the live dataloader traversal order.
+
+Export a manifest:
+
+```bash
+python scripts/export_tlg_manifest.py \
+    --datasets labliquidvision dtld pouring ot2 \
+    --out manifests/tlg_eval.json \
+    --max-samples-per-dataset 500 \
+    --shuffle \
+    --seed 42 \
+    --train-ratio 0.8
+```
+
+Evaluate the generated test split:
+
+```bash
+python run_vlm_tasks.py \
+    --manifest manifests/tlg_eval.json \
+    --manifest-split test \
+    --model qwen \
+    --predictions-out results/manifest_qwen_preds.jsonl \
+    --metrics-out results/manifest_qwen_metrics.json
+```
+
+Filter a manifest evaluation to specific datasets:
+
+```bash
+python run_vlm_tasks.py \
+    --manifest manifests/tlg_eval.json \
+    --manifest-split all \
+    --datasets dtld pouring \
+    --dry-run
+```
+
+Manifest samples include only JSON-serializable fields needed by the evaluator:
+image paths, task metadata, split labels, selected routing fields, and
+standardized annotations. Large arrays such as depth maps are intentionally not
+embedded.
+
+## SD-VLM
+
+[SD-VLM](https://github.com/cpystan/SD-VLM) uses depth information with a
+LLaVA-style VLM. Install its `llava` package separately:
 
 ```bash
 git clone https://github.com/cpystan/SD-VLM.git
@@ -277,71 +192,204 @@ cd SD-VLM
 pip install -e .
 ```
 
-#### Run SD-VLM only
+Run SD-VLM:
 
 ```bash
-# Default: SD-VLM estimates depth internally from the RGB image
+# Estimate depth internally.
 python run_vlm_tasks.py --model sdvlm --datasets labliquidvision
 
-# Use ground-truth depth maps from LabLiquidVision (Input_DepthMap.npy)
+# Use LabLiquidVision ground-truth depth arrays.
 python run_vlm_tasks.py --model sdvlm --datasets labliquidvision --sdvlm-gt-depth
 
-# Use a local SD-VLM checkpoint and a local vision tower
+# Use precomputed depth arrays from a directory.
 python run_vlm_tasks.py \
     --model sdvlm \
     --datasets labliquidvision \
-    --sdvlm-model-path /path/to/SD-VLM-7B \
-    --sdvlm-vision-tower /path/to/clip-vit-large-patch14-336 \
-    --sdvlm-gt-depth
+    --sdvlm-depth-dir results/precomputed_depth
 ```
 
-#### SD-VLM CLI flags
+SD-VLM-specific flags:
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--model` | `qwen` | Which model to run: `qwen`, `sdvlm`, `internvl35_8b`, `llavaov2_8b`, or `kimi_vl_a3b` |
-| `--sdvlm-model-path` | `cpystan/SD-VLM-7B` | HuggingFace ID or local path for the SD-VLM checkpoint |
-| `--sdvlm-vision-tower` | `openai/clip-vit-large-patch14-336` | Vision encoder identifier |
-| `--sdvlm-gt-depth` | off | Use ground-truth depth from the dataset (`Input_DepthMap.npy`) |
-| `--sdvlm-no-depth` | off | Disable depth encoding entirely (`use_depth=False`) |
+| Flag | Description |
+| --- | --- |
+| `--sdvlm-model-path` | Hugging Face ID or local path for the SD-VLM checkpoint. |
+| `--sdvlm-vision-tower` | Vision encoder identifier. |
+| `--sdvlm-gt-depth` | Load dataset-provided depth where available. |
+| `--sdvlm-depth-dir` | Load precomputed `.npy` depth maps instead of running a depth model. |
+| `--sdvlm-no-depth` | Disable depth encoding. |
 
-#### Depth compatibility with LabLiquidVision
+## Debugging and Visualization
 
-LabLiquidVision provides per-sample depth maps stored as `.npy` files
-(`Input_DepthMap.npy`).  When `--sdvlm-gt-depth` is passed, the loader reads
-these arrays, normalises them to 8-bit grayscale, and passes them to SD-VLM as
-ground-truth depth images.  Without `--sdvlm-gt-depth`, SD-VLM estimates depth
-internally using Depth Anything V2.
-
-#### Attention visualization for SD-VLM
-
-SD-VLM supports the same `--viz-attn` / `--viz-out` flags as Qwen3-VL.  The
-visualization logic lives in `attention_viz.py` and works by:
-
-1. Locating LLaVA's `IMAGE_TOKEN_INDEX` placeholder in the flat token sequence.
-2. Expanding it to the patch grid (576 tokens for the default 336 × 336 CLIP
-   ViT-L/14 vision tower; derived automatically from the model's config).
-3. Averaging attention weights from generated tokens over the patch grid and
-   upsampling the result to the original image resolution.
+Attention overlays are available for Qwen and SD-VLM:
 
 ```bash
 python run_vlm_tasks.py \
-    --model sdvlm \
     --datasets labliquidvision \
-    --sdvlm-gt-depth \
+    --model qwen \
+    --max-samples 5 \
     --viz-attn \
     --viz-attn-mode first_answer_token \
-    --viz-out results/sdvlm_attn
+    --viz-out results/qwen_attn
 ```
 
-The output PNGs follow the same directory structure as the Qwen visualizations:
-`{viz_out}/{dataset}/{sample_id}/{task}.png`.
+For DTLD target-box debugging:
 
-## Notebooks
+```bash
+python run_vlm_tasks.py \
+    --dry-run \
+    --datasets dtld \
+    --max-samples 10 \
+    --debug-dtld-boxes \
+    --debug-image-out results/debug_dtld_boxes
+```
 
-Available preview notebooks:
+Use `--dtld-no-occlusion-filter` to disable DTLD occlusion filtering for
+target-object and container-count tasks during inspection.
 
-- `notebooks/dataset_preview_labliquidvision.ipynb`
-- `notebooks/dataset_preview_glasses.ipynb`
-- `notebooks/dataset_preview_dtld.ipynb`
-- `notebooks/dataset_preview_pouring.ipynb`
+## HPC Scripts
+
+The `hpc_scripts/` directory contains LSF job templates used in development.
+They include local DTU paths and should be edited before reuse.
+
+Current entry points:
+
+| Script | Purpose |
+| --- | --- |
+| `hpc_scripts/run_open_vlm.sh` | Run one open VLM/dataset job. Override `MODEL`, `DATASET`, and `MAX_SAMPLES` before submission. |
+| `hpc_scripts/run_open_vlm_array.sh` | Array over `internvl35_8b`, `llavaov2_8b`, `kimi_vl_a3b` and the configured datasets. |
+| `hpc_scripts/run_sd.sh` | Run SD-VLM. |
+| `hpc_scripts/run_coqe_qwen.sh` | Run the experimental COQE/Qwen evaluator. |
+| `hpc_scripts/run_array.sh` | Older array runner for benchmark jobs. |
+
+Example:
+
+```bash
+MODEL=llavaov2_8b DATASET=dtld MAX_SAMPLES=50 bsub < hpc_scripts/run_open_vlm.sh
+```
+
+## COQE Experimental Workflow
+
+COQE support is not part of the main TLG runner yet. It lives under
+`src/experimental/coqe` and has its own Qwen evaluator, prompts, parser, metrics,
+and README.
+
+Run a small COQE dry run:
+
+```bash
+python src/experimental/coqe/run_qwen_coqe.py \
+    --split test \
+    --data-root data/COQE_dataset \
+    --tasks volume content comparative pouring \
+    --dry-run \
+    --max-samples 5
+```
+
+Run COQE with Qwen:
+
+```bash
+python src/experimental/coqe/run_qwen_coqe.py \
+    --split test \
+    --data-root data/COQE_dataset \
+    --tasks volume content comparative pouring \
+    --model Qwen/Qwen3-VL-8B-Instruct \
+    --predictions-out results/coqe_predictions.jsonl \
+    --metrics-out results/coqe_metrics.json
+```
+
+See `src/experimental/coqe/README.md` for the COQE-specific task definitions and
+evaluation details.
+
+## Tasks and Prompts
+
+Prompt configuration is data-driven:
+
+| File | Role |
+| --- | --- |
+| `src/tlg/prompt_bank.yaml` | Reusable task prompts, choices, and output format instructions. |
+| `src/tlg/dataset_prompts.yaml` | Dataset-to-task assignments and dataset-specific prompt prefixes. |
+| `src/tlg/annotations.py` | Standard annotation object used by loaders and manifests. |
+| `src/tlg/evaluation.py` | Parsers and metrics for model outputs. |
+
+Current task families include:
+
+| Task | Examples |
+| --- | --- |
+| Fill level | `fill_percentage`, `fill_level_ordinal`, `fill_height_mm` |
+| Container understanding | `container_count`, `container_type`, `container_type_simple` |
+| Appearance | `liquid_color`, `tip_presence` |
+| Grounding | `liquid_grounding`, `highlighted_region_type` |
+| Materials | `material_types_present`, `multiphase_material_presence` |
+| Temporal ordering | `pouring_frame_ordering` |
+
+## Dataset Coverage
+
+TLG standardizes several datasets into image-plus-prompt evaluation samples.
+Tasks are generated only when the source dataset has reliable supervision for
+that question.
+
+| Dataset | Current use |
+| --- | --- |
+| LabLiquidVision | Controlled lab images with vessel type, liquid color, liquid/vessel volume, optional masks, and depth maps. Used for fill level, counting, type recognition, color, and grounding. |
+| Glasses in the Wild | Real-world glass images with geometry and fluid-level keypoints. Used for fill percentage and ordinal fill-level evaluation. |
+| DTLD | Transparent-container RGB scenes with object boxes, visible masks, liquid labels, and liquid height where available. Used for counting, target-box container type, and fill height. |
+| LabPicsV1 | Laboratory material segmentation data. Used for highlighted-region, material-presence, multiphase, and liquid-grounding tasks. |
+| Pouring | Video frames and annotations from pouring sequences. Used for single-frame liquid grounding and four-frame chronological ordering. |
+| OT2 | YOLO-style lab video frames with Tip and Liquid boxes. Used for grounding, tip presence, counting, simple labware prompts, and qualitative sequence analysis. |
+
+Additional datasets under discussion or experimental development:
+
+| Dataset | Status |
+| --- | --- |
+| COQE | Experimental standalone evaluator under `src/experimental/coqe`; not wired into the main TLG runner. |
+| Liquid Level Detection | Not included in the main benchmark runner. |
+
+## Project Structure
+
+```text
+run_vlm_tasks.py                  Main VLM evaluator
+scripts/export_tlg_manifest.py    Export reproducible manifest JSON
+scripts/precompute_*_depth.py      Depth precomputation helpers
+scripts/calculate_*               Analysis helpers
+src/tlg/                           Prompts, evaluation, runners, manifests
+src/datasets/                      Dataset loaders and sync helpers
+src/experimental/coqe/             Standalone COQE/Qwen experiment
+hpc_scripts/                       LSF job templates
+notebooks/                         Dataset preview notebooks
+tests/                             Unit and integration-style smoke tests
+```
+
+## Development Checks
+
+Run the test suite:
+
+```bash
+python -m unittest discover tests
+```
+
+Run focused tests while changing runner behavior:
+
+```bash
+python -m unittest tests.test_labliquidvision_dry_run tests.test_manifest
+```
+
+The tests construct small synthetic datasets where possible, so they are useful
+for checking loader, prompt, parser, metric, and manifest behavior without
+requiring the full datasets.
+
+## Benchmark Goal
+
+Transparent liquid perception is hard for general-purpose VLMs because liquid
+boundaries can be faint, refracted, reflected, occluded, or ambiguous. TLG
+turns heterogeneous supervision from lab and real-world datasets into
+standardized VQA-style tasks so models can be compared on:
+
+- quantitative liquid-level reasoning;
+- transparent-container recognition and counting;
+- liquid-region localization;
+- robustness to reflections and refractions;
+- material and multiphase reasoning;
+- temporal ordering in pouring sequences.
+
+Metrics include parse rate, exact/category accuracy, multi-label scores,
+grounding scores where applicable, mean absolute error for numeric tasks, and
+within-tolerance accuracy for configured numeric targets.
