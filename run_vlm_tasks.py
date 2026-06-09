@@ -28,6 +28,7 @@ from tlg import PromptBank
 from tlg.cli import parse_args, parse_data_root_overrides, parse_tol_overrides
 from tlg.dataset_factory import DATA_ROOTS, build_dataset
 from tlg.evaluation import TaskStats, score_prediction
+from tlg.manifest import TLGManifestDataset, load_manifest_payload
 from tlg.model_runner import (
     HF_VLM_CONFIGS,
     MAX_NEW_TOKENS,
@@ -69,7 +70,11 @@ def main():
     tol_overrides = parse_tol_overrides(args.tol)
     data_root_overrides = parse_data_root_overrides(args.data_root)
     prompt_bank = PromptBank.default()
-    dataset_names = args.datasets or ["labliquidvision"]
+    manifest_path = Path(args.manifest) if args.manifest else None
+    if manifest_path is not None:
+        dataset_names = args.datasets or _manifest_dataset_names(manifest_path, split=str(args.manifest_split))
+    else:
+        dataset_names = args.datasets or ["labliquidvision"]
 
     model_choice = args.model
     open_hf_model_keys = ["internvl35_8b", "llavaov2_8b", "kimi_vl_a3b"]
@@ -152,23 +157,32 @@ def main():
     for dataset_name in dataset_names:
         print(f"\n{'=' * 60}")
         print(f"Dataset: {dataset_name}")
-        data_root = data_root_overrides.get(dataset_name, DATA_ROOTS[dataset_name])
-        print(f"Loading dataset from: {data_root}")
+        if manifest_path is not None:
+            print(f"Loading manifest from: {manifest_path}")
+            print(f"Manifest split: {args.manifest_split}")
+            dataset = TLGManifestDataset(
+                manifest_path,
+                split=str(args.manifest_split),
+                datasets=[dataset_name],
+            )
+        else:
+            data_root = data_root_overrides.get(dataset_name, DATA_ROOTS[dataset_name])
+            print(f"Loading dataset from: {data_root}")
 
-        if not data_root.exists():
-            print("Dataset root does not exist; skipping.")
-            continue
+            if not data_root.exists():
+                print("Dataset root does not exist; skipping.")
+                continue
 
-        dataset = build_dataset(
-            dataset_name,
-            data_root,
-            prompt_bank=prompt_bank,
-            include_depth=include_depth,
-            shuffle=args.shuffle,
-            seed=int(args.seed),
-            debug_dtld_boxes=debug_dtld_boxes,
-            dtld_no_occlusion_filter=bool(args.dtld_no_occlusion_filter),
-        )
+            dataset = build_dataset(
+                dataset_name,
+                data_root,
+                prompt_bank=prompt_bank,
+                include_depth=include_depth,
+                shuffle=args.shuffle,
+                seed=int(args.seed),
+                debug_dtld_boxes=debug_dtld_boxes,
+                dtld_no_occlusion_filter=bool(args.dtld_no_occlusion_filter),
+            )
         print(f"Dataset size: {len(dataset)}")
         task_pool_counts = _primary_task_counts(dataset)
         if task_pool_counts:
@@ -373,6 +387,9 @@ def main():
             "datasets": list(dataset_names),
             "max_samples": "all" if args.max_samples is None else int(args.max_samples),
         }
+        if manifest_path is not None:
+            payload["manifest"] = str(manifest_path)
+            payload["manifest_split"] = str(args.manifest_split)
         if run_qwen:
             payload["qwen"] = {
                 "model_name": MODEL_NAME,
@@ -419,6 +436,23 @@ def _model_label(model_key: str) -> str:
     if model_key == "sdvlm":
         return "SD-VLM"
     return HF_VLM_CONFIGS[model_key].label
+
+
+def _manifest_dataset_names(manifest_path: Path, *, split: str) -> List[str]:
+    payload = load_manifest_payload(manifest_path)
+    names: List[str] = []
+    seen = set()
+    for sample in payload.get("samples", []):
+        if not isinstance(sample, dict):
+            continue
+        if split != "all" and str(sample.get("split", "")) != split:
+            continue
+        dataset_name = str(sample.get("dataset", "")).strip()
+        if not dataset_name or dataset_name in seen:
+            continue
+        seen.add(dataset_name)
+        names.append(dataset_name)
+    return names
 
 
 def _record_results(
