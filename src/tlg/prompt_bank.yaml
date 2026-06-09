@@ -88,7 +88,7 @@ liquid_color:
 
     Your task is to identify the color of the visible liquid.
     Base the answer on the liquid region itself, not on container tint, labels, reflections, shadows, caps, or background objects.
-    If the liquid appears transparent or nearly colorless, answer with a simple color name such as clear.
+    If the liquid appears transparent or nearly colorless, answer transparent.
 
     Output format: only one concise color name. Do not include explanations, punctuation, or extra words.
 

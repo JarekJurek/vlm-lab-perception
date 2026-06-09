@@ -331,6 +331,20 @@ class PouringDataset:
                 )
             )
 
+        liquid_stats = sample.get("liquid_stats", {})
+        has_visible_liquid = isinstance(liquid_stats, dict) and bool(liquid_stats.get("presence"))
+        if has_visible_liquid and self._prompt_bank.supports(dataset, "liquid_color"):
+            annotations.append(
+                add(
+                    task="liquid_color",
+                    answer="transparent",
+                    metadata={
+                        "source": "pouring_testset_videos",
+                        "liquid_visibility_source": "labelme_liquid_mask_polygon",
+                    },
+                )
+            )
+
         return annotations
 
 

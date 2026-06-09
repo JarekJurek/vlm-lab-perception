@@ -67,10 +67,12 @@ class PouringFrameOrderingDataset:
             img_path = Path(str(cast(Any, frame["path"])))
             area = float(liquid_stats.get("total_area", 0.0))
             grounding_targets: List[Dict[str, object]] = []
+            liquid_color_answer: Optional[str] = None
             for ann in frame.get("annotations", []):
                 if getattr(ann, "metadata", {}).get("task") == "liquid_grounding" and isinstance(ann.answer, list):
                     grounding_targets = list(ann.answer)
-                    break
+                if getattr(ann, "metadata", {}).get("task") == "liquid_color" and isinstance(ann.answer, str):
+                    liquid_color_answer = ann.answer
 
             frames_by_video[video_id].append(
                 {
@@ -78,13 +80,15 @@ class PouringFrameOrderingDataset:
                     "img_path": img_path,
                     "area": area,
                     "liquid_grounding_targets": grounding_targets,
+                    "liquid_color_answer": liquid_color_answer,
                 }
             )
 
         has_liquid_grounding = self.prompt_bank.supports("pouring", "liquid_grounding")
+        has_liquid_color = self.prompt_bank.supports("pouring", "liquid_color")
         has_frame_ordering = self.prompt_bank.supports("pouring", "pouring_frame_ordering")
 
-        if has_liquid_grounding:
+        if has_liquid_grounding or has_liquid_color:
             for video_id, frame_infos in sorted(frames_by_video.items()):
                 for frame_info in sorted(frame_infos, key=lambda item: item["frame_index"]):
                     self._append_single_frame_sample(samples, video_id, frame_info)
@@ -189,13 +193,20 @@ class PouringFrameOrderingDataset:
         if self.prompt_bank.supports("pouring", "liquid_grounding"):
             annotations.append(self._build_liquid_grounding_annotation(sample_id, a))
 
+        if self.prompt_bank.supports("pouring", "liquid_color") and a.get("liquid_color_answer") is not None:
+            annotations.append(self._build_liquid_color_annotation(sample_id, a))
+
         if not annotations:
             return
 
         samples.append(
             {
                 "id": sample_id,
-                "primary_task": "liquid_grounding",
+                "primary_task": (
+                    "liquid_grounding"
+                    if self.prompt_bank.supports("pouring", "liquid_grounding")
+                    else "liquid_color"
+                ),
                 "split": self.split,
                 "video_id": video_id,
                 "frame_a_index": a["frame_index"],
@@ -221,6 +232,20 @@ class PouringFrameOrderingDataset:
                 "coordinate_scale": 1000,
                 "source": "labelme_liquid_mask_polygon",
                 "liquid_region_count": len(targets),
+            },
+        )
+
+    def _build_liquid_color_annotation(self, sample_id: str, a: dict) -> TLGAnnotation:
+        return make_tlg_annotation(
+            self.prompt_bank,
+            dataset="pouring",
+            task="liquid_color",
+            image_id=sample_id,
+            answer=str(a["liquid_color_answer"]),
+            metadata={
+                "frame_index": a["frame_index"],
+                "source": "pouring_testset_videos",
+                "liquid_visibility_source": "labelme_liquid_mask_polygon",
             },
         )
 

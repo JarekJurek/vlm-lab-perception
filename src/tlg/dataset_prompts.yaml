@@ -62,3 +62,4 @@ ot2:
 pouring:
   - pouring_frame_ordering
   - liquid_grounding
+  - liquid_color
