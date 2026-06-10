@@ -75,7 +75,9 @@ HF_VLM_CONFIGS: Dict[str, HFVLMConfig] = {
         auto_model_class="causal_lm",
     ),
 }
-MAX_NEW_TOKENS = int(os.environ.get("QWEN_MAX_NEW_TOKENS", "256"))
+MAX_NEW_TOKENS = int(
+    os.environ.get("QWEN_MAX_NEW_TOKENS", os.environ.get("VLM_MAX_NEW_TOKENS", "256"))
+)
 
 
 def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
@@ -92,7 +94,8 @@ def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
 
 
 def _max_new_tokens(config: HFVLMConfig) -> int:
-    return _env_int(config.max_new_tokens_env, config.default_max_new_tokens) or config.default_max_new_tokens
+    shared_default = _env_int("VLM_MAX_NEW_TOKENS", config.default_max_new_tokens)
+    return _env_int(config.max_new_tokens_env, shared_default) or config.default_max_new_tokens
 
 
 def model_max_new_tokens(model_key: str) -> int:

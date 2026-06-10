@@ -31,7 +31,6 @@ from tlg.evaluation import TaskStats, score_prediction
 from tlg.manifest import TLGManifestDataset, load_manifest_payload
 from tlg.model_runner import (
     HF_VLM_CONFIGS,
-    MAX_NEW_TOKENS,
     MODEL_NAME,
     load_hf_vlm_model,
     load_model,
@@ -271,6 +270,7 @@ def main():
                         viz_attn_mode=str(args.viz_attn_mode),
                         debug_dtld_boxes=debug_dtld_boxes,
                         debug_image_out_dir=debug_image_out_dir,
+                        max_new_tokens=model_max_new_tokens("qwen"),
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
                     print(f"[Qwen] Failed to load images for sample index={idx0}: {e}")
@@ -395,7 +395,7 @@ def main():
         if run_qwen:
             payload["qwen"] = {
                 "model_name": MODEL_NAME,
-                "max_new_tokens": int(MAX_NEW_TOKENS),
+                "max_new_tokens": int(model_max_new_tokens("qwen")),
                 "overall": {k: v.to_dict() for k, v in overall_stats["qwen"].items()},
                 "per_dataset": {
                     ds: {k: v.to_dict() for k, v in stats.items()}

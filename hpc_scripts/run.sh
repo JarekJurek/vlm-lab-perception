@@ -48,10 +48,11 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Qwen-VL memory is dominated by visual tokens. LabPics Chemistry contains larger
 # source images than the other datasets, so cap processor pixels for 16 GB GPUs.
 export QWEN_MAX_PIXELS=$((512 * 28 * 28))
-export QWEN_MAX_NEW_TOKENS=128
-export INTERNVL35_MAX_NEW_TOKENS="${INTERNVL35_MAX_NEW_TOKENS:-128}"
-export LLAVAOV2_MAX_NEW_TOKENS="${LLAVAOV2_MAX_NEW_TOKENS:-128}"
-export KIMI_VL_MAX_NEW_TOKENS="${KIMI_VL_MAX_NEW_TOKENS:-128}"
+export VLM_MAX_NEW_TOKENS="${VLM_MAX_NEW_TOKENS:-128}"
+export QWEN_MAX_NEW_TOKENS="${QWEN_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
+export INTERNVL35_MAX_NEW_TOKENS="${INTERNVL35_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
+export LLAVAOV2_MAX_NEW_TOKENS="${LLAVAOV2_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
+export KIMI_VL_MAX_NEW_TOKENS="${KIMI_VL_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
 
 # Single-model runner. Supported --model values:
 #   qwen           -> Qwen/Qwen3-VL-8B-Instruct
