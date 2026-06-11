@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 from functools import partial
 from pathlib import Path
@@ -60,6 +61,22 @@ _VESSEL_TYPE_CHOICES = (
 )
 
 
+def _sample_names(split_dir: Path, *, require_files: bool) -> List[str]:
+    names: List[str] = []
+    with os.scandir(split_dir) as split_entries:
+        for entry in split_entries:
+            if not entry.is_dir():
+                continue
+            if not require_files:
+                names.append(entry.name)
+                continue
+            with os.scandir(entry.path) as sample_entries:
+                filenames = {child.name for child in sample_entries}
+            if "Image.jpg" in filenames and "Data.json" in filenames:
+                names.append(entry.name)
+    return sorted(names)
+
+
 class LabPicsChemistryDataset:
     """LabPics Chemistry loader for TLG VQA-style annotations."""
 
@@ -71,6 +88,7 @@ class LabPicsChemistryDataset:
         prompt_bank: Optional[PromptBank] = None,
         shuffle: bool = False,
         seed: Optional[int] = None,
+        validate_files: bool = True,
     ) -> None:
         root_path = Path(root)
         if not root_path.exists():
@@ -79,9 +97,13 @@ class LabPicsChemistryDataset:
         self.root = root_path
         self.default_split = _normalize_split(split)
         self._prompt_bank = prompt_bank or PromptBank.default()
+        self._validate_files = validate_files
 
         if ids is None:
-            self._entries = self._discover_entries(self.default_split)
+            self._entries = self._discover_entries(
+                self.default_split,
+                validate_files=self._validate_files,
+            )
         else:
             self._entries = self._resolve_ids(list(ids), default_split=self.default_split)
 
@@ -89,7 +111,7 @@ class LabPicsChemistryDataset:
             rng = random.Random(seed)
             rng.shuffle(self._entries)
 
-    def _discover_entries(self, split: str) -> List[Tuple[str, str]]:
+    def _discover_entries(self, split: str, *, validate_files: bool = True) -> List[Tuple[str, str]]:
         splits = ("train", "test") if split == "all" else (split,)
         entries: List[Tuple[str, str]] = []
         for split_name in splits:
@@ -97,9 +119,8 @@ class LabPicsChemistryDataset:
             if not split_dir.is_dir():
                 continue
             entries.extend(
-                (split_name, p.name)
-                for p in sorted(split_dir.iterdir())
-                if p.is_dir() and (p / "Image.jpg").exists() and (p / "Data.json").exists()
+                (split_name, name)
+                for name in _sample_names(split_dir, require_files=validate_files)
             )
         return entries
 

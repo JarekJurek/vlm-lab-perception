@@ -93,6 +93,17 @@ class LabPicsChemistryDatasetTest(unittest.TestCase):
                 "labpics_chemistry/test/1000Eval",
             )
 
+    def test_can_defer_file_validation_during_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_sample(root / "Train", "completeTrain")
+            (root / "Train" / "missingDataTrain").mkdir(parents=True)
+
+            self.assertEqual(len(LabPicsChemistryDataset(root, split="train")), 1)
+            lazy_dataset = LabPicsChemistryDataset(root, split="train", validate_files=False)
+
+            self.assertEqual(len(lazy_dataset), 2)
+
     def test_builds_core_annotations_from_labpics_chemistry_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
