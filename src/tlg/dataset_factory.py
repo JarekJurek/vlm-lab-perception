@@ -19,7 +19,7 @@ DATA_ROOTS = {
     "labliquidvision": Path("data") / "LabLiquidVision",
     "glasses": Path("data") / "glasses_in_the_wild" / "glasses_in_the_wild_1000",
     "dtld": Path("data") / "DTLD_dataset",
-    "labpics_chemistry": Path("data") / "LabPics Chemistry",
+    "labpics_chemistry": Path("data") / "LabPics_Chemistry",
     "pouring": Path("data") / "pouring",
     "ot2": Path("data") / "OT2-Computer-Vision",
     "coqe": Path("data") / "COQE_dataset",

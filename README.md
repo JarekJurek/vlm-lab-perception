@@ -72,7 +72,7 @@ By default, the runner looks for datasets under `data/`:
 | `labliquidvision` | `data/LabLiquidVision` |
 | `glasses` | `data/glasses_in_the_wild/glasses_in_the_wild_1000` |
 | `dtld` | `data/DTLD_dataset` |
-| `labpics_chemistry` | `data/LabPics Chemistry` |
+| `labpics_chemistry` | `data/LabPics_Chemistry` |
 | `pouring` | `data/pouring` |
 | `ot2` | `data/OT2-Computer-Vision` |
 
