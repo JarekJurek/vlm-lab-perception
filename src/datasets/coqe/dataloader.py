@@ -8,19 +8,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 from tlg import PromptBank, TLGAnnotation
+from tlg.annotations import CONTAINER_CAPACITY_BIN_LABELS
 
 
 COQE_VOLUME_LABELS: Mapping[int, str] = {
-    1: "0_50_ml",
-    2: "50_100_ml",
-    3: "100_200_ml",
-    4: "200_300_ml",
-    5: "300_500_ml",
-    6: "500_750_ml",
-    7: "750_1000_ml",
-    8: "1000_2000_ml",
-    9: "2000_3000_ml",
-    10: "3000_inf_ml",
+    i + 1: label for i, label in enumerate(CONTAINER_CAPACITY_BIN_LABELS)
 }
 
 COQE_CONTENT_LABELS: Mapping[int, str] = {

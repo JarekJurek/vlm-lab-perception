@@ -30,6 +30,32 @@ _CONTAINER_TYPE_SIMPLE_MAP = {
     "Tip": "Tip",
 }
 
+CONTAINER_CAPACITY_BIN_LABELS = (
+    "0_50_ml",
+    "50_100_ml",
+    "100_200_ml",
+    "200_300_ml",
+    "300_500_ml",
+    "500_750_ml",
+    "750_1000_ml",
+    "1000_2000_ml",
+    "2000_3000_ml",
+    "3000_inf_ml",
+)
+
+_CONTAINER_CAPACITY_BIN_EDGES = (
+    0.0,
+    50.0,
+    100.0,
+    200.0,
+    300.0,
+    500.0,
+    750.0,
+    1000.0,
+    2000.0,
+    3000.0,
+)
+
 
 _DATACLASS_KWARGS = {"slots": True} if "slots" in inspect.signature(dataclass).parameters else {}
 
@@ -121,3 +147,15 @@ def discretize_fill_level_ordinal(fill_percentage: float, *, empty_threshold: fl
     if p < 75.0:
         return "MID"
     return "HIGH"
+
+
+def discretize_container_capacity_ml(capacity_ml: float) -> str:
+    """Discretize total container capacity in mL into the shared COQE-style bins."""
+    capacity = float(capacity_ml)
+    if capacity < 0.0:
+        raise ValueError(f"Container capacity must be non-negative, got {capacity_ml!r}")
+
+    for i, upper in enumerate(_CONTAINER_CAPACITY_BIN_EDGES[1:]):
+        if capacity < upper:
+            return CONTAINER_CAPACITY_BIN_LABELS[i]
+    return CONTAINER_CAPACITY_BIN_LABELS[-1]
