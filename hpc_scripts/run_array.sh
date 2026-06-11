@@ -19,8 +19,8 @@
 #BSUB -W 10:00
 
 ### --------------- output and error files ---------------
-#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_dataset_%J_%I.out
-#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/qwen_dataset_%J_%I.err
+#BSUB -o /zhome/a2/c/213547/vlm-lab-perception/bakery/10.06.2026/qwen_dataset_%J_%I.out
+#BSUB -e /zhome/a2/c/213547/vlm-lab-perception/bakery/10.06.2026/qwen_dataset_%J_%I.err
     
 ### --------------- send email notifications -------------
 #BSUB -u s242911@dtu.dk
@@ -63,16 +63,24 @@ DATASETS=(
     labpics_chemistry
     pouring
     ot2
+    coqe
 )
 
 DATASET="${DATASETS[$((LSB_JOBINDEX - 1))]}"
 TIMESTAMP=$(date +%Y%m%d_%H)
-OUT_DIR="bakery/qwen_${TIMESTAMP}/${DATASET}"
+OUT_DIR="bakery/10.06.2026/qwen_${TIMESTAMP}/${DATASET}"
 mkdir -p "${OUT_DIR}"
 
 echo "Array job index: ${LSB_JOBINDEX}"
 echo "Dataset: ${DATASET}"
 echo "Output directory: ${OUT_DIR}"
+
+# Single-model runner. Supported --model values:
+#   qwen           -> Qwen/Qwen3-VL-8B-Instruct
+#   sdvlm          -> cpystan/SD-VLM-7B; add --sdvlm-gt-depth or --sdvlm-depth-dir if needed
+#   internvl35_8b  -> OpenGVLab/InternVL3_5-8B
+#   llavaov2_8b    -> lmms-lab-encoder/LLaVA-OneVision-2-8B-Instruct
+#   kimi_vl_a3b    -> moonshotai/Kimi-VL-A3B-Thinking-2506
 
 python3 run_vlm_tasks.py \
     --datasets "${DATASET}" \
