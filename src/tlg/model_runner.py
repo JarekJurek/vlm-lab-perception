@@ -23,6 +23,7 @@ class HFVLMConfig:
     default_max_new_tokens: int = 256
     trust_remote_code: bool = False
     dtype: str = "float16"
+    auto_model_class: str = "image_text_to_text"
     processor_max_pixels_env: Optional[str] = None
     processor_min_pixels_env: Optional[str] = None
     default_max_pixels: Optional[int] = None
@@ -71,9 +72,12 @@ HF_VLM_CONFIGS: Dict[str, HFVLMConfig] = {
         max_new_tokens_env="KIMI_VL_MAX_NEW_TOKENS",
         default_max_new_tokens=256,
         trust_remote_code=True,
+        auto_model_class="causal_lm",
     ),
 }
-MAX_NEW_TOKENS = int(os.environ.get("QWEN_MAX_NEW_TOKENS", "256"))
+MAX_NEW_TOKENS = int(
+    os.environ.get("QWEN_MAX_NEW_TOKENS", os.environ.get("VLM_MAX_NEW_TOKENS", "256"))
+)
 
 
 def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
@@ -90,7 +94,8 @@ def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
 
 
 def _max_new_tokens(config: HFVLMConfig) -> int:
-    return _env_int(config.max_new_tokens_env, config.default_max_new_tokens) or config.default_max_new_tokens
+    shared_default = _env_int("VLM_MAX_NEW_TOKENS", config.default_max_new_tokens)
+    return _env_int(config.max_new_tokens_env, shared_default) or config.default_max_new_tokens
 
 
 def model_max_new_tokens(model_key: str) -> int:
@@ -118,10 +123,22 @@ def _processor_kwargs(config: HFVLMConfig) -> Dict[str, object]:
     return processor_kwargs
 
 
+def _auto_model_loader(config: HFVLMConfig) -> Any:
+    from transformers import AutoModelForCausalLM, AutoModelForImageTextToText
+
+    if config.auto_model_class == "image_text_to_text":
+        return AutoModelForImageTextToText
+    if config.auto_model_class == "causal_lm":
+        return AutoModelForCausalLM
+    raise ValueError(
+        f"Unsupported auto model class for {config.key}: {config.auto_model_class!r}"
+    )
+
+
 def load_hf_vlm_model(model_key: str, *, viz_attn: bool = False) -> Tuple[Any, Any]:
     """Load a Hugging Face image-text-to-text VLM by registry key."""
     import torch
-    from transformers import AutoModelForImageTextToText, AutoProcessor
+    from transformers import AutoProcessor
 
     if model_key not in HF_VLM_CONFIGS:
         raise ValueError(f"Unknown HF VLM key: {model_key}")
@@ -150,7 +167,16 @@ def load_hf_vlm_model(model_key: str, *, viz_attn: bool = False) -> Tuple[Any, A
         # When visualizing, prefer an implementation that can return weights.
         model_kwargs["attn_implementation"] = "eager"
 
-    model = AutoModelForImageTextToText.from_pretrained(config.model_id, **model_kwargs).eval()
+    if config.trust_remote_code:
+        import transformers.activations as activations
+
+        if not hasattr(activations, "PytorchGELUTanh") and hasattr(
+            activations, "GELUTanh"
+        ):
+            activations.PytorchGELUTanh = activations.GELUTanh
+
+    auto_model = _auto_model_loader(config)
+    model = auto_model.from_pretrained(config.model_id, **model_kwargs).eval()
     print(f"{config.label} loaded successfully.")
     return model, processor
 

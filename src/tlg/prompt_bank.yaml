@@ -183,11 +183,23 @@ highlighted_region_type:
 
     Your task is to classify the material or object type inside the boxed region.
     Answer based only on the boxed region. Ignore all unboxed image content.
-    Choose VESSEL for container walls or labware, LIQUID for fluid regions, FOAM for bubbles or froth, SOLID for solid objects or chunks, POWDER for fine dry material, VAPOR for mist or gas-like material, and BACKGROUND when the box contains none of these target lab materials.
+    Choose VESSEL for container walls or labware, LIQUID for fluid regions, FOAM for bubbles or froth, GEL for gel-like material, SOLID for solid objects or chunks, POWDER for fine dry material, GRANULAR for visibly grainy or particulate material, VAPOR for mist or gas-like material, and BACKGROUND when the box contains none of these target lab materials.
 
-    Options: VESSEL, LIQUID, FOAM, SOLID, POWDER, VAPOR, BACKGROUND.
+    Options: VESSEL, LIQUID, FOAM, GEL, SOLID, POWDER, GRANULAR, VAPOR, BACKGROUND.
     Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
-  choices: ["VESSEL", "LIQUID", "FOAM", "SOLID", "POWDER", "VAPOR", "BACKGROUND"]
+  choices: ["VESSEL", "LIQUID", "FOAM", "GEL", "SOLID", "POWDER", "GRANULAR", "VAPOR", "BACKGROUND"]
+
+labpics_chemistry_container_type:
+  task_type: "Container Type Recognition (classification)"
+  question: |
+    You are analyzing a laboratory image with a red bounding box marking one target container.
+
+    Your task is to identify the specific container or vessel type inside the boxed region.
+    Base the decision on the container shape, neck, body geometry, openings, connectors, and overall labware appearance.
+
+    Options: Beaker, Flask, RoundFlask, Erlenmeyer, Vial, Tube, Bottle, Jar, Cylinder, SeparatoryFunnel, Funnel, Condenser, Connector, Dish, Bowl, HeatingVessel, Syringe, Pippete, Burete, ChromatographyColumn.
+    Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
+  choices: ["Beaker", "Flask", "RoundFlask", "Erlenmeyer", "Vial", "Tube", "Bottle", "Jar", "Cylinder", "SeparatoryFunnel", "Funnel", "Condenser", "Connector", "Dish", "Bowl", "HeatingVessel", "Syringe", "Pippete", "Burete", "ChromatographyColumn"]
 
 material_types_present:
   task_type: "Material Type Presence (multi-label)"

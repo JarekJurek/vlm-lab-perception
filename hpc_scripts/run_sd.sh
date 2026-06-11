@@ -49,7 +49,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 python3 run_vlm_tasks.py \
     --model sdvlm \
     --sdvlm-depth-dir "${SDVLM_DEPTH_DIR}" \
-    --datasets labliquidvision glasses dtld labpicsv1 pouring ot2 \
+    --datasets labliquidvision glasses dtld labpics_chemistry pouring ot2 \
     --max-samples 10 \
     --shuffle \
     --seed 42 \

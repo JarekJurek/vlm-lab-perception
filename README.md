@@ -72,7 +72,7 @@ By default, the runner looks for datasets under `data/`:
 | `labliquidvision` | `data/LabLiquidVision` |
 | `glasses` | `data/glasses_in_the_wild/glasses_in_the_wild_1000` |
 | `dtld` | `data/DTLD_dataset` |
-| `labpicsv1` | `data/LabPicsV1` |
+| `labpics_chemistry` | `data/LabPics_Chemistry` |
 | `pouring` | `data/pouring` |
 | `ot2` | `data/OT2-Computer-Vision` |
 
@@ -124,7 +124,7 @@ Useful flags:
 
 | Flag | Description |
 | --- | --- |
-| `--datasets` | Dataset keys to evaluate. Choices: `labliquidvision`, `glasses`, `dtld`, `labpicsv1`, `pouring`, `ot2`. |
+| `--datasets` | Dataset keys to evaluate. Choices: `labliquidvision`, `glasses`, `dtld`, `labpics_chemistry`, `pouring`, `ot2`, `coqe`. |
 | `--model` | One model key to run in this process. |
 | `--dry-run` | Validate loading and standardized annotations without loading a model. |
 | `--max-samples N` | Cap samples per dataset, or per task for task-aware datasets such as `pouring`. |
@@ -332,7 +332,7 @@ that question.
 | LabLiquidVision | Controlled lab images with vessel type, liquid color, liquid/vessel volume, optional masks, and depth maps. Used for fill level, counting, type recognition, color, and grounding. |
 | Glasses in the Wild | Real-world glass images with geometry and fluid-level keypoints. Used for fill percentage and ordinal fill-level evaluation. |
 | DTLD | Transparent-container RGB scenes with object boxes, visible masks, liquid labels, and liquid height where available. Used for counting, target-box container type, and fill height. |
-| LabPicsV1 | Laboratory material segmentation data. Used for highlighted-region, material-presence, multiphase, and liquid-grounding tasks. |
+| LabPics Chemistry | Laboratory chemistry scenes with vessel, material, part, and semantic-mask annotations. Used for highlighted-region, material-presence, multiphase, liquid-grounding, container-count, and container-type tasks. |
 | Pouring | Video frames and annotations from pouring sequences. Used for single-frame liquid grounding and four-frame chronological ordering. |
 | OT2 | YOLO-style lab video frames with Tip and Liquid boxes. Used for grounding, tip presence, counting, simple labware prompts, and qualitative sequence analysis. |
 

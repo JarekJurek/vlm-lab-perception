@@ -31,7 +31,6 @@ from tlg.evaluation import TaskStats, score_prediction
 from tlg.manifest import TLGManifestDataset, load_manifest_payload
 from tlg.model_runner import (
     HF_VLM_CONFIGS,
-    MAX_NEW_TOKENS,
     MODEL_NAME,
     load_hf_vlm_model,
     load_model,
@@ -183,6 +182,7 @@ def main():
                 debug_dtld_boxes=debug_dtld_boxes,
                 dtld_no_occlusion_filter=bool(args.dtld_no_occlusion_filter),
                 coqe_split=str(args.coqe_split),
+                labpics_chemistry_split=str(args.labpics_chemistry_split),
             )
         print(f"Dataset size: {len(dataset)}")
         task_pool_counts = _primary_task_counts(dataset)
@@ -270,6 +270,7 @@ def main():
                         viz_attn_mode=str(args.viz_attn_mode),
                         debug_dtld_boxes=debug_dtld_boxes,
                         debug_image_out_dir=debug_image_out_dir,
+                        max_new_tokens=model_max_new_tokens("qwen"),
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
                     print(f"[Qwen] Failed to load images for sample index={idx0}: {e}")
@@ -394,7 +395,7 @@ def main():
         if run_qwen:
             payload["qwen"] = {
                 "model_name": MODEL_NAME,
-                "max_new_tokens": int(MAX_NEW_TOKENS),
+                "max_new_tokens": int(model_max_new_tokens("qwen")),
                 "overall": {k: v.to_dict() for k, v in overall_stats["qwen"].items()},
                 "per_dataset": {
                     ds: {k: v.to_dict() for k, v in stats.items()}
@@ -488,7 +489,8 @@ def _record_results(
                 "model": model_key,
                 "dataset": dataset_name,
                 "sample_id": sample.get("id", "unknown"),
-                "image_id": ann.image_id,
+                "image_id": sample.get("image_id", ann.image_id),
+                "annotation_id": ann.image_id,
                 "task": rec.get("task"),
                 "task_type": rec.get("task_type"),
                 "question": rec.get("question"),

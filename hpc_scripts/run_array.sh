@@ -50,13 +50,17 @@ export NUMEXPR_NUM_THREADS=4
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 export QWEN_MAX_PIXELS=$((512 * 28 * 28))
-export QWEN_MAX_NEW_TOKENS=512
+export VLM_MAX_NEW_TOKENS="${VLM_MAX_NEW_TOKENS:-512}"
+export QWEN_MAX_NEW_TOKENS="${QWEN_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
+export INTERNVL35_MAX_NEW_TOKENS="${INTERNVL35_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
+export LLAVAOV2_MAX_NEW_TOKENS="${LLAVAOV2_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
+export KIMI_VL_MAX_NEW_TOKENS="${KIMI_VL_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
 
 DATASETS=(
     labliquidvision
     glasses
     dtld
-    labpicsv1
+    labpics_chemistry
     pouring
     ot2
 )

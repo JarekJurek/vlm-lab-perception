@@ -34,11 +34,19 @@ dtld:
     fill_height_mm:
       - target_region_bbox_prompt
 
-labpicsv1:
-  - highlighted_region_type
-  - material_types_present
-  - multiphase_material_presence
-  - liquid_grounding
+labpics_chemistry:
+  include:
+    - highlighted_region_type
+    - material_types_present
+    - multiphase_material_presence
+    - liquid_grounding
+    - container_count
+    - container_type
+  overrides:
+    container_type: labpics_chemistry_container_type
+  task_prompt_prefixes:
+    container_type:
+      - target_region_bbox_prompt
 
 ot2:
   include:

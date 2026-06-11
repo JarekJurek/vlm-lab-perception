@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--datasets",
         nargs="+",
-        choices=["labliquidvision", "glasses", "dtld", "labpicsv1", "pouring", "ot2", "coqe"],
+        choices=["labliquidvision", "glasses", "dtld", "labpics_chemistry", "pouring", "ot2", "coqe"],
         default=None,
         help=(
             "One or more datasets to evaluate. Default: labliquidvision for dataset loaders, "
@@ -143,6 +143,12 @@ def parse_args() -> argparse.Namespace:
         choices=["train", "val", "test"],
         default="test",
         help="COQE split to evaluate when using the COQE dataset loader. Default: test.",
+    )
+    parser.add_argument(
+        "--labpics-chemistry-split",
+        choices=["train", "test", "all"],
+        default="all",
+        help="LabPics Chemistry split to evaluate when using the LabPics Chemistry dataset loader. Default: all.",
     )
     parser.add_argument(
         "--tol",
