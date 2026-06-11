@@ -167,6 +167,14 @@ def load_hf_vlm_model(model_key: str, *, viz_attn: bool = False) -> Tuple[Any, A
         # When visualizing, prefer an implementation that can return weights.
         model_kwargs["attn_implementation"] = "eager"
 
+    if config.trust_remote_code:
+        import transformers.activations as activations
+
+        if not hasattr(activations, "PytorchGELUTanh") and hasattr(
+            activations, "GELUTanh"
+        ):
+            activations.PytorchGELUTanh = activations.GELUTanh
+
     auto_model = _auto_model_loader(config)
     model = auto_model.from_pretrained(config.model_id, **model_kwargs).eval()
     print(f"{config.label} loaded successfully.")
