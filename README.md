@@ -4,14 +4,16 @@ TLG is a codebase for evaluating vision-language models on transparent liquid
 perception tasks: fill level estimation, container recognition, counting,
 liquid grounding, material reasoning, and temporal pouring order.
 
-The project is currently organized around two practical workflows:
+The project is currently organized around three practical workflows:
 
 1. run the current dataset loaders directly with `run_vlm_tasks.py`;
-2. export a reproducible JSON manifest and evaluate from that manifest.
+2. export a reproducible JSON manifest and evaluate from that manifest;
+3. run the standalone COQE/Qwen experiment when you need the original
+   COQE-style task framing.
 
 The root runner supports Qwen3-VL, SD-VLM, and several open Hugging Face VLMs.
-COQE/Qwen evaluation is kept as an experimental workflow under
-`src/experimental/coqe`.
+COQE also has a TLG-compatible dataset loader in the main runner; the richer
+COQE/Qwen workflow remains under `src/experimental/coqe`.
 
 ## Quick Start
 
@@ -61,7 +63,11 @@ Supported `--model` values:
 
 You can override Hugging Face model IDs with environment variables:
 `QWEN_MODEL_ID`, `INTERNVL35_MODEL_ID`, `LLAVAOV2_MODEL_ID`, and
-`KIMI_VL_MODEL_ID`.
+`KIMI_VL_MODEL_ID`. Generation lengths can be controlled globally with
+`VLM_MAX_NEW_TOKENS` or per model with `QWEN_MAX_NEW_TOKENS`,
+`INTERNVL35_MAX_NEW_TOKENS`, `LLAVAOV2_MAX_NEW_TOKENS`, and
+`KIMI_VL_MAX_NEW_TOKENS`. Qwen image limits can also be adjusted with
+`QWEN_MAX_PIXELS` and `QWEN_MIN_PIXELS`.
 
 ## Dataset Roots
 
@@ -75,6 +81,7 @@ By default, the runner looks for datasets under `data/`:
 | `labpics_chemistry` | `data/LabPics_Chemistry` |
 | `pouring` | `data/pouring` |
 | `ot2` | `data/OT2-Computer-Vision` |
+| `coqe` | `data/COQE_dataset` |
 
 Override roots with one or more `--data-root` flags:
 
@@ -133,10 +140,12 @@ Useful flags:
 | `--metrics-out PATH` | Write aggregate metrics JSON. |
 | `--data-root dataset=/path` | Override a dataset root. Can be repeated. |
 | `--tol task=value` | Override numeric within-tolerance scoring. Can be repeated. |
+| `--coqe-split` | COQE split for the main `coqe` loader. Choices: `train`, `val`, `test`; default `test`. |
+| `--labpics-chemistry-split` | LabPics Chemistry split. Choices: `train`, `test`, `all`; default `all`. |
 
-For `pouring`, `--max-samples` is applied per task. For example,
-`--max-samples 200` selects up to 200 liquid-grounding frame samples and up to
-200 pouring-frame-ordering samples.
+For task-aware datasets, `--max-samples` is applied per primary task. For
+example, `--max-samples 200` on `pouring` selects up to 200 samples for each of
+its primary task pools.
 
 ## Manifest Workflow
 
@@ -147,7 +156,7 @@ Export a manifest:
 
 ```bash
 python scripts/export_tlg_manifest.py \
-    --datasets labliquidvision dtld pouring ot2 \
+    --datasets labliquidvision dtld pouring ot2 coqe \
     --out manifests/tlg_eval.json \
     --max-samples-per-dataset 500 \
     --shuffle \
@@ -180,6 +189,11 @@ Manifest samples include only JSON-serializable fields needed by the evaluator:
 image paths, task metadata, split labels, selected routing fields, and
 standardized annotations. Large arrays such as depth maps are intentionally not
 embedded.
+
+Manifest export defaults to all datasets configured in
+`src/tlg/dataset_prompts.yaml`. It uses the current dataloaders, skips samples
+without standardized annotations, and supports `--labpics-chemistry-split` for
+LabPics Chemistry source selection.
 
 ## SD-VLM
 
@@ -267,11 +281,26 @@ Example:
 MODEL=llavaov2_8b DATASET=dtld MAX_SAMPLES=50 bsub < hpc_scripts/run_open_vlm.sh
 ```
 
-## COQE Experimental Workflow
+## COQE Workflows
 
-COQE support is not part of the main TLG runner yet. It lives under
-`src/experimental/coqe` and has its own Qwen evaluator, prompts, parser, metrics,
-and README.
+COQE can be evaluated through the main TLG runner with the `coqe` dataset key:
+
+```bash
+python run_vlm_tasks.py \
+    --dry-run \
+    --datasets coqe \
+    --coqe-split test \
+    --max-samples 5
+```
+
+The main runner maps COQE into standardized TLG tasks:
+`container_capacity_ml`, `container_capacity_bin`, `container_content_bin`, and
+`liquid_transfer_feasibility`.
+
+The standalone experimental workflow lives under `src/experimental/coqe` and
+keeps its own Qwen evaluator, prompts, parser, metrics, and README. Use it when
+you want the COQE-specific JSON prompts, visual query-box rendering, pouring
+sequence evaluation, or paper-style rescoring utilities.
 
 Run a small COQE dry run:
 
@@ -320,6 +349,7 @@ Current task families include:
 | Grounding | `liquid_grounding`, `highlighted_region_type` |
 | Materials | `material_types_present`, `multiphase_material_presence` |
 | Temporal ordering | `pouring_frame_ordering` |
+| COQE reasoning | `container_capacity_ml`, `container_capacity_bin`, `container_content_bin`, `liquid_transfer_feasibility` |
 
 ## Dataset Coverage
 
@@ -335,12 +365,12 @@ that question.
 | LabPics Chemistry | Laboratory chemistry scenes with vessel, material, part, and semantic-mask annotations. Used for highlighted-region, material-presence, multiphase, liquid-grounding, container-count, and container-type tasks. |
 | Pouring | Video frames and annotations from pouring sequences. Used for single-frame liquid grounding and four-frame chronological ordering. |
 | OT2 | YOLO-style lab video frames with Tip and Liquid boxes. Used for grounding, tip presence, counting, simple labware prompts, and qualitative sequence analysis. |
+| COQE | Container capacity, content-bin, and transfer-feasibility reasoning from COQE annotations. Available in the main TLG runner and in the standalone experimental COQE/Qwen evaluator. |
 
 Additional datasets under discussion or experimental development:
 
 | Dataset | Status |
 | --- | --- |
-| COQE | Experimental standalone evaluator under `src/experimental/coqe`; not wired into the main TLG runner. |
 | Liquid Level Detection | Not included in the main benchmark runner. |
 
 ## Project Structure
