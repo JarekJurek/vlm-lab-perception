@@ -67,7 +67,7 @@ HF_VLM_CONFIGS: Dict[str, HFVLMConfig] = {
         label="Kimi-VL-A3B",
         model_id=os.environ.get(
             "KIMI_VL_MODEL_ID",
-            "moonshotai/Kimi-VL-A3B-Thinking-2506",
+            "moonshotai/Kimi-VL-A3B-Instruct",
         ),
         max_new_tokens_env="KIMI_VL_MAX_NEW_TOKENS",
         default_max_new_tokens=256,
@@ -166,6 +166,22 @@ def load_hf_vlm_model(model_key: str, *, viz_attn: bool = False) -> Tuple[Any, A
         # Some attention backends do not materialize attention weights.
         # When visualizing, prefer an implementation that can return weights.
         model_kwargs["attn_implementation"] = "eager"
+    if config.key == "kimi_vl_a3b":
+        model_kwargs["attn_implementation"] = "eager"
+        from transformers.dynamic_module_utils import (
+            HF_MODULES_CACHE,
+            get_cached_module_file,
+        )
+
+        module_file = Path(
+            get_cached_module_file(config.model_id, "modeling_kimi_vl.py")
+        )
+        if not module_file.is_file():
+            module_file = Path(HF_MODULES_CACHE) / module_file
+        module_text = module_file.read_text()
+        future_import = "from __future__ import annotations\n"
+        if future_import not in module_text:
+            module_file.write_text(future_import + module_text)
 
     if config.trust_remote_code:
         import transformers.activations as activations
@@ -270,6 +286,9 @@ def run_task(
 
     # Generate.
     gen_out = None
+    generation_kwargs: Dict[str, object] = {}
+    if model_label == "Kimi-VL-A3B":
+        generation_kwargs["use_cache"] = False
     with torch.no_grad():
         if viz_attn:
             gen_out = model.generate(
@@ -277,6 +296,7 @@ def run_task(
                 max_new_tokens=max_new_tokens or MAX_NEW_TOKENS,
                 do_sample=False,
                 return_dict_in_generate=True,
+                **generation_kwargs,
             )
             output_ids = gen_out.sequences
         else:
@@ -284,6 +304,7 @@ def run_task(
                 **inputs,
                 max_new_tokens=max_new_tokens or MAX_NEW_TOKENS,
                 do_sample=False,
+                **generation_kwargs,
             )
 
     # Decode.
