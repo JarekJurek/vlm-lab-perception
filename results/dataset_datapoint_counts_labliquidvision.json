@@ -1,0 +1,50 @@
+{
+  "coqe_split": "test",
+  "datasets": {
+    "labliquidvision": {
+      "configured_tasks": [
+        "container_capacity_bin",
+        "container_capacity_ml",
+        "container_count",
+        "container_type",
+        "container_type_simple",
+        "fill_level_ordinal",
+        "fill_percentage",
+        "liquid_color",
+        "liquid_grounding"
+      ],
+      "datapoints": 50228,
+      "empty_samples": 0,
+      "root": "data/LabLiquidVision",
+      "samples": 5595,
+      "samples_with_datapoints": 5595,
+      "status": "ok",
+      "tasks": {
+        "container_capacity_bin": 5574,
+        "container_capacity_ml": 5574,
+        "container_count": 5595,
+        "container_type": 5574,
+        "container_type_simple": 5574,
+        "fill_level_ordinal": 5574,
+        "fill_percentage": 5574,
+        "liquid_color": 5595,
+        "liquid_grounding": 5594
+      },
+      "validation_errors": []
+    }
+  },
+  "dtld_no_occlusion_filter": false,
+  "labpics_chemistry_split": "all",
+  "prompt_assignments": "/home/gregory/vlm-lab-perception/src/tlg/dataset_prompts.yaml",
+  "task_totals": {
+    "container_capacity_bin": 5574,
+    "container_capacity_ml": 5574,
+    "container_count": 5595,
+    "container_type": 5574,
+    "container_type_simple": 5574,
+    "fill_level_ordinal": 5574,
+    "fill_percentage": 5574,
+    "liquid_color": 5595,
+    "liquid_grounding": 5594
+  }
+}
