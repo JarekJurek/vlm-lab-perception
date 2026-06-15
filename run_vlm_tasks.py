@@ -68,7 +68,11 @@ def main():
 
     tol_overrides = parse_tol_overrides(args.tol)
     data_root_overrides = parse_data_root_overrides(args.data_root)
-    prompt_bank = PromptBank.default()
+    prompt_bank_path = Path(args.prompt_bank)
+    dataset_prompts_path = Path(args.dataset_prompts)
+    prompt_bank = PromptBank.from_files(prompt_bank_path, dataset_prompts_path)
+    print(f"Prompt bank: {prompt_bank_path}")
+    print(f"Dataset prompts: {dataset_prompts_path}")
     manifest_path = Path(args.manifest) if args.manifest else None
     if manifest_path is not None:
         dataset_names = args.datasets or _manifest_dataset_names(manifest_path, split=str(args.manifest_split))
@@ -270,6 +274,7 @@ def main():
                         viz_attn_mode=str(args.viz_attn_mode),
                         debug_dtld_boxes=debug_dtld_boxes,
                         debug_image_out_dir=debug_image_out_dir,
+                        prompt_bank=prompt_bank,
                         max_new_tokens=model_max_new_tokens("qwen"),
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
@@ -310,6 +315,7 @@ def main():
                         viz_attn_mode=str(args.viz_attn_mode),
                         debug_dtld_boxes=debug_dtld_boxes,
                         debug_image_out_dir=debug_image_out_dir,
+                        prompt_bank=prompt_bank,
                     )
                 except (FileNotFoundError, OSError, SyntaxError) as e:
                     print(f"[SD-VLM] Failed to load images for sample index={idx0}: {e}")
@@ -348,6 +354,7 @@ def main():
                         viz_attn_mode=str(args.viz_attn_mode),
                         debug_dtld_boxes=debug_dtld_boxes,
                         debug_image_out_dir=debug_image_out_dir,
+                        prompt_bank=prompt_bank,
                         model_key=model_key,
                         model_label=model_label,
                         max_new_tokens=model_max_new_tokens(model_key),
@@ -388,6 +395,8 @@ def main():
         payload: Dict[str, Any] = {
             "datasets": list(dataset_names),
             "max_samples": "all" if args.max_samples is None else int(args.max_samples),
+            "prompt_bank": str(prompt_bank_path),
+            "dataset_prompts": str(dataset_prompts_path),
         }
         if manifest_path is not None:
             payload["manifest"] = str(manifest_path)

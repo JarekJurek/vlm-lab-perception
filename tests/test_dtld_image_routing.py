@@ -87,6 +87,73 @@ class DTLDImageRoutingTest(unittest.TestCase):
                 captured_prompts["container_type"].startswith(PromptBank.default().target_region_bbox_prompt())
             )
 
+    def test_runner_uses_custom_prompt_bank_for_target_box_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            rgb_path = root / "rgb.png"
+            prompt_defs_path = root / "prompt_bank.yaml"
+            dataset_prompts_path = root / "dataset_prompts.yaml"
+            Image.new("RGB", (20, 20), color=(255, 255, 255)).save(rgb_path)
+            prompt_defs_path.write_text(
+                """
+target_region_bbox_prompt:
+  question: "CUSTOM TARGET PREFIX."
+container_type:
+  question: "What is the marked container?"
+  task_type: categorical
+  choices:
+    - Flask
+""",
+                encoding="utf-8",
+            )
+            dataset_prompts_path.write_text(
+                """
+dtld:
+  include:
+    - container_type
+  task_prompt_prefixes:
+    container_type:
+      - target_region_bbox_prompt
+""",
+                encoding="utf-8",
+            )
+            sample = {"rgb_image": rgb_path, "bbox_visib": [5, 5, 8, 8]}
+            annotations = [
+                TLGAnnotation(
+                    image_id="dtld/000000/000000/000000",
+                    dataset="dtld",
+                    task_type="type",
+                    question="type?",
+                    answer="Flask",
+                    metadata={"task": "container_type"},
+                ),
+            ]
+            prompt_bank = PromptBank.from_files(prompt_defs_path, dataset_prompts_path)
+            captured_prompts = {}
+            original_run_task = model_runner.run_task
+
+            def fake_run_task(_model, _processor, _image, prompt, **kwargs):
+                captured_prompts[kwargs["task_name"]] = prompt
+                return "ok"
+
+            try:
+                model_runner.run_task = fake_run_task
+                model_runner.test_sample(
+                    model=None,
+                    processor=None,
+                    sample=sample,
+                    annotations=annotations,
+                    dataset_name="dtld",
+                    sample_id="sample",
+                    viz_attn=False,
+                    viz_out_dir=None,
+                    prompt_bank=prompt_bank,
+                )
+            finally:
+                model_runner.run_task = original_run_task
+
+            self.assertTrue(captured_prompts["container_type"].startswith("CUSTOM TARGET PREFIX."))
+
 
 if __name__ == "__main__":
     unittest.main()

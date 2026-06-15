@@ -364,6 +364,7 @@ def test_sample(
     debug_image_out_dir: Optional[Path] = None,
     model_key: str = "qwen",
     model_label: str = "Qwen",
+    prompt_bank: Optional[PromptBank] = None,
     max_new_tokens: Optional[int] = None,
 ) -> Dict[str, str]:
     """Test all tasks on a single sample.
@@ -420,7 +421,7 @@ def test_sample(
         target_box_image = make_target_box_overlay(rgb_image, rgb_image, bbox=bbox)
 
     results: Dict[str, str] = {}
-    prompt_bank = PromptBank.default()
+    prompt_bank = prompt_bank or PromptBank.default()
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         print(f"  Running task: {task_name}...")

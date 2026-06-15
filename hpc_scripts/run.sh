@@ -53,6 +53,8 @@ export QWEN_MAX_NEW_TOKENS="${QWEN_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
 export INTERNVL35_MAX_NEW_TOKENS="${INTERNVL35_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
 export LLAVAOV2_MAX_NEW_TOKENS="${LLAVAOV2_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
 export KIMI_VL_MAX_NEW_TOKENS="${KIMI_VL_MAX_NEW_TOKENS:-${VLM_MAX_NEW_TOKENS}}"
+export PROMPT_BANK="${PROMPT_BANK:-src/tlg/prompt_bank.yaml}"
+export DATASET_PROMPTS="${DATASET_PROMPTS:-src/tlg/dataset_prompts.yaml}"
 
 # Single-model runner. Supported --model values:
 #   qwen           -> Qwen/Qwen3-VL-8B-Instruct
@@ -64,6 +66,8 @@ mkdir -p bakery/qwen_run_1
 
 python3 run_vlm_tasks.py \
     --datasets labliquidvision glasses dtld labpics_chemistry pouring ot2 \
+    --prompt-bank "${PROMPT_BANK}" \
+    --dataset-prompts "${DATASET_PROMPTS}" \
     --max-samples 500 \
     --shuffle \
     --seed 42 \

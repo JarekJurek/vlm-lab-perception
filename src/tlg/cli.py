@@ -59,6 +59,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--prompt-bank",
+        type=str,
+        default=str(Path(__file__).with_name("prompt_bank.yaml")),
+        help="Prompt definition YAML to use for this run. Default: src/tlg/prompt_bank.yaml.",
+    )
+    parser.add_argument(
+        "--dataset-prompts",
+        type=str,
+        default=str(Path(__file__).with_name("dataset_prompts.yaml")),
+        help=(
+            "Dataset-to-task prompt assignment YAML to use for this run. "
+            "Default: src/tlg/dataset_prompts.yaml."
+        ),
+    )
+    parser.add_argument(
         "--manifest",
         type=str,
         default="",

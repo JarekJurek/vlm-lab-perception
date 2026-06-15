@@ -310,6 +310,16 @@ Prompt configuration is data-driven:
 | `src/tlg/annotations.py` | Standard annotation object used by loaders and manifests. |
 | `src/tlg/evaluation.py` | Parsers and metrics for model outputs. |
 
+The main runner accepts alternate prompt files per run:
+
+```bash
+python3 run_vlm_tasks.py \
+  --prompt-bank experiments/prompts/prompt_bank_v2.yaml \
+  --dataset-prompts experiments/prompts/dataset_prompts_v2.yaml \
+  --datasets labpics_chemistry \
+  --model qwen
+```
+
 Current task families include:
 
 | Task | Examples |

@@ -62,15 +62,21 @@ export QWEN_MAX_NEW_TOKENS="${QWEN_MAX_NEW_TOKENS:-256}"
 export INTERNVL35_MAX_NEW_TOKENS="${INTERNVL35_MAX_NEW_TOKENS:-256}"
 export LLAVAOV2_MAX_NEW_TOKENS="${LLAVAOV2_MAX_NEW_TOKENS:-256}"
 export KIMI_VL_MAX_NEW_TOKENS="${KIMI_VL_MAX_NEW_TOKENS:-256}"
+export PROMPT_BANK="${PROMPT_BANK:-src/tlg/prompt_bank.yaml}"
+export DATASET_PROMPTS="${DATASET_PROMPTS:-src/tlg/dataset_prompts.yaml}"
 
 echo "Model: ${MODEL}"
 echo "Dataset: ${DATASET}"
+echo "PROMPT_BANK: ${PROMPT_BANK}"
+echo "DATASET_PROMPTS: ${DATASET_PROMPTS}"
 echo "HF_HOME: ${HF_HOME}"
 echo "Output directory: ${OUT_DIR}"
 
 python3 run_vlm_tasks.py \
     --datasets "${DATASET}" \
     --model "${MODEL}" \
+    --prompt-bank "${PROMPT_BANK}" \
+    --dataset-prompts "${DATASET_PROMPTS}" \
     --max-samples "${MAX_SAMPLES}" \
     --shuffle \
     --seed 42 \

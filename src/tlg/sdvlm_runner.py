@@ -421,6 +421,7 @@ def test_sample_sdvlm(
     viz_attn_mode: str = "all",
     debug_dtld_boxes: bool = False,
     debug_image_out_dir: Optional[Path] = None,
+    prompt_bank: Optional[PromptBank] = None,
 ) -> Dict[str, str]:
     """Test all tasks on a single sample with SD-VLM.
 
@@ -454,6 +455,7 @@ def test_sample_sdvlm(
         sample_id=sample_id,
         debug_dtld_boxes=debug_dtld_boxes,
         debug_image_out_dir=debug_image_out_dir,
+        prompt_bank=prompt_bank,
     ):
         task_name = task_input.task_name
         print(f"  [SD-VLM] Running task: {task_name}...")
@@ -485,6 +487,7 @@ def build_sdvlm_task_inputs(
     sample_id: str,
     debug_dtld_boxes: bool = False,
     debug_image_out_dir: Optional[Path] = None,
+    prompt_bank: Optional[PromptBank] = None,
 ) -> List[SDVLMTaskInput]:
     """Build the exact task images/prompts consumed by SD-VLM."""
 
@@ -528,7 +531,7 @@ def build_sdvlm_task_inputs(
         target_box_image = make_target_box_overlay(rgb_image, rgb_image, bbox=bbox)
 
     out: List[SDVLMTaskInput] = []
-    prompt_bank = PromptBank.default()
+    prompt_bank = prompt_bank or PromptBank.default()
     for ann in annotations:
         task_name = str(ann.metadata.get("task", ann.task_type))
         region_box_image = _make_annotation_box_image(rgb_image, ann)
