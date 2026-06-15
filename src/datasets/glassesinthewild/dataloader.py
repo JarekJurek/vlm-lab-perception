@@ -109,12 +109,18 @@ class GlassesInTheWildDataset:
 
         if fill is not None:
             fill_clamped = float(max(0.0, min(100.0, fill)))
+            thresholded_fill = _apply_empty_fill_threshold(fill_clamped)
+            metadata = {
+                "derived_fill_percentage": round(thresholded_fill, 6),
+                "raw_derived_fill_percentage": round(fill_clamped, 6),
+                "empty_fill_threshold": _GLASSES_EMPTY_FILL_THRESHOLD,
+            }
             if self._prompt_bank.supports(dataset, "fill_percentage"):
                 annotations.append(
                     add(
                         task="fill_percentage",
-                        answer=round(fill_clamped, 1),
-                        metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+                        answer=round(thresholded_fill, 1),
+                        metadata=metadata,
                     )
                 )
             if self._prompt_bank.supports(dataset, "fill_level_ordinal"):
@@ -125,7 +131,7 @@ class GlassesInTheWildDataset:
                             fill_clamped,
                             empty_threshold=_GLASSES_EMPTY_FILL_THRESHOLD,
                         ),
-                        metadata={"derived_fill_percentage": round(fill_clamped, 6)},
+                        metadata=metadata,
                     )
                 )
         return annotations
@@ -182,3 +188,10 @@ def _estimate_fill_percentage(keypoints: Dict[str, Dict[str, float]]) -> Optiona
     level = (bottom["y"] - fluid["y"]) / height
     level = max(0.0, min(1.0, level))
     return level * 100.0
+
+
+def _apply_empty_fill_threshold(fill_percentage: float) -> float:
+    fill = float(max(0.0, min(100.0, fill_percentage)))
+    if fill <= _GLASSES_EMPTY_FILL_THRESHOLD:
+        return 0.0
+    return fill
