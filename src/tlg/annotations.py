@@ -149,3 +149,12 @@ def discretize_fill_level_ordinal(fill_percentage: float, *, empty_threshold: fl
     if p < 83.0:
         return "66_percent"
     return "100_percent"
+
+
+def discretize_container_capacity_ml(capacity_ml: float) -> str:
+    """Discretize a vessel capacity in milliliters into configured capacity bins."""
+    capacity = max(0.0, float(capacity_ml))
+    for index, lower_edge in enumerate(_CONTAINER_CAPACITY_BIN_EDGES[1:], start=1):
+        if capacity < lower_edge:
+            return CONTAINER_CAPACITY_BIN_LABELS[index - 1]
+    return CONTAINER_CAPACITY_BIN_LABELS[-1]
