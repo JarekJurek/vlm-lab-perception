@@ -1,0 +1,191 @@
+{
+  "coqe_split": "test",
+  "datasets": {
+    "coqe": {
+      "configured_tasks": [
+        "container_capacity_bin",
+        "container_capacity_ml",
+        "container_content_bin",
+        "liquid_transfer_feasibility"
+      ],
+      "datapoints": 12000,
+      "empty_samples": 0,
+      "root": "data/COQE_dataset",
+      "samples": 12000,
+      "samples_with_datapoints": 12000,
+      "status": "ok",
+      "tasks": {
+        "container_capacity_bin": 3000,
+        "container_capacity_ml": 3000,
+        "container_content_bin": 3000,
+        "liquid_transfer_feasibility": 3000
+      },
+      "validation_errors": []
+    },
+    "dtld": {
+      "configured_tasks": [
+        "container_count",
+        "container_type",
+        "container_type_simple",
+        "fill_height_mm"
+      ],
+      "datapoints": 259298,
+      "empty_samples": 5093,
+      "root": "data/DTLD_dataset",
+      "samples": 85167,
+      "samples_with_datapoints": 80074,
+      "status": "ok",
+      "tasks": {
+        "container_count": 19076,
+        "container_type": 80074,
+        "container_type_simple": 80074,
+        "fill_height_mm": 80074
+      },
+      "validation_errors": []
+    },
+    "glasses": {
+      "configured_tasks": [
+        "fill_level_ordinal",
+        "fill_percentage"
+      ],
+      "datapoints": 2000,
+      "empty_samples": 0,
+      "root": "data/glasses_in_the_wild/glasses_in_the_wild_1000",
+      "samples": 1000,
+      "samples_with_datapoints": 1000,
+      "status": "ok",
+      "tasks": {
+        "fill_level_ordinal": 1000,
+        "fill_percentage": 1000
+      },
+      "validation_errors": []
+    },
+    "labliquidvision": {
+      "configured_tasks": [
+        "container_capacity_bin",
+        "container_capacity_ml",
+        "container_count",
+        "container_type",
+        "container_type_simple",
+        "fill_level_ordinal",
+        "fill_percentage",
+        "liquid_color",
+        "liquid_grounding"
+      ],
+      "datapoints": 50228,
+      "empty_samples": 0,
+      "root": "data/LabLiquidVision",
+      "samples": 5595,
+      "samples_with_datapoints": 5595,
+      "status": "ok",
+      "tasks": {
+        "container_capacity_bin": 5574,
+        "container_capacity_ml": 5574,
+        "container_count": 5595,
+        "container_type": 5574,
+        "container_type_simple": 5574,
+        "fill_level_ordinal": 5574,
+        "fill_percentage": 5574,
+        "liquid_color": 5595,
+        "liquid_grounding": 5594
+      },
+      "validation_errors": []
+    },
+    "ot2": {
+      "configured_tasks": [
+        "container_count",
+        "container_type",
+        "container_type_simple",
+        "fill_level_ordinal",
+        "fill_percentage",
+        "liquid_color",
+        "liquid_grounding",
+        "tip_presence"
+      ],
+      "datapoints": 544,
+      "empty_samples": 0,
+      "root": "data/OT2-Computer-Vision",
+      "samples": 91,
+      "samples_with_datapoints": 91,
+      "status": "ok",
+      "tasks": {
+        "container_count": 71,
+        "container_type": 71,
+        "container_type_simple": 71,
+        "fill_level_ordinal": 71,
+        "fill_percentage": 71,
+        "liquid_color": 27,
+        "liquid_grounding": 71,
+        "tip_presence": 91
+      },
+      "validation_errors": []
+    },
+    "pouring": {
+      "configured_tasks": [
+        "liquid_color",
+        "liquid_grounding",
+        "pouring_frame_ordering"
+      ],
+      "datapoints": 3066,
+      "empty_samples": 0,
+      "root": "data/pouring",
+      "samples": 2933,
+      "samples_with_datapoints": 2933,
+      "status": "ok",
+      "tasks": {
+        "liquid_color": 133,
+        "liquid_grounding": 133,
+        "pouring_frame_ordering": 2800
+      },
+      "validation_errors": []
+    },
+    "labpics_chemistry": {
+      "configured_tasks": [
+        "container_count",
+        "labpics_chemistry_container_type",
+        "labpics_chemistry_region_type",
+        "liquid_grounding",
+        "material_types_present",
+        "multiphase_material_presence"
+      ],
+      "datapoints": 37539,
+      "empty_samples": 0,
+      "root": "data/LabPics_Chemistry",
+      "samples": 6381,
+      "samples_with_datapoints": 6381,
+      "status": "ok",
+      "tasks": {
+        "container_count": 6381,
+        "labpics_chemistry_container_type": 5634,
+        "labpics_chemistry_region_type": 6381,
+        "liquid_grounding": 6381,
+        "material_types_present": 6381,
+        "multiphase_material_presence": 6381
+      },
+      "validation_errors": []
+    }
+  },
+  "dtld_no_occlusion_filter": false,
+  "labpics_chemistry_split": "all",
+  "prompt_assignments": "/home/gregory/vlm-lab-perception/src/tlg/dataset_prompts.yaml",
+  "task_totals": {
+    "container_capacity_bin": 8574,
+    "container_capacity_ml": 8574,
+    "container_content_bin": 3000,
+    "container_count": 31123,
+    "container_type": 85719,
+    "container_type_simple": 85719,
+    "fill_height_mm": 80074,
+    "fill_level_ordinal": 6645,
+    "fill_percentage": 6645,
+    "labpics_chemistry_container_type": 5634,
+    "labpics_chemistry_region_type": 6381,
+    "liquid_color": 5755,
+    "liquid_grounding": 12179,
+    "liquid_transfer_feasibility": 3000,
+    "material_types_present": 6381,
+    "multiphase_material_presence": 6381,
+    "pouring_frame_ordering": 2800,
+    "tip_presence": 91
+  }
+}

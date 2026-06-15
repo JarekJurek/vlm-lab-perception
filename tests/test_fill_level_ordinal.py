@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from tlg.annotations import discretize_fill_level_ordinal
+from tlg.annotations import discretize_container_capacity_ml, discretize_fill_level_ordinal
 
 
 class FillLevelOrdinalTest(unittest.TestCase):
@@ -38,6 +38,32 @@ class FillLevelOrdinalTest(unittest.TestCase):
             discretize_fill_level_ordinal(25.1, empty_threshold=25.0),
             "33_percent",
         )
+
+
+class ContainerCapacityBinTest(unittest.TestCase):
+    def test_capacity_bin_boundaries(self) -> None:
+        cases = [
+            (0.0, "0_50_ml"),
+            (49.999, "0_50_ml"),
+            (50.0, "50_100_ml"),
+            (100.0, "100_200_ml"),
+            (3000.0, "3000_inf_ml"),
+        ]
+
+        for capacity_ml, expected in cases:
+            with self.subTest(capacity_ml=capacity_ml):
+                self.assertEqual(discretize_container_capacity_ml(capacity_ml), expected)
+
+    def test_capacity_bins_cover_labliquidvision_observed_values(self) -> None:
+        cases = [
+            (16.0, "0_50_ml"),
+            (55.0, "50_100_ml"),
+            (755.0, "750_1000_ml"),
+        ]
+
+        for capacity_ml, expected in cases:
+            with self.subTest(capacity_ml=capacity_ml):
+                self.assertEqual(discretize_container_capacity_ml(capacity_ml), expected)
 
 
 if __name__ == "__main__":
