@@ -51,7 +51,7 @@ _GROUNDING_TASKS = {"liquid_grounding"}
 _DEFAULT_TOLERANCES = {"fill_percentage": 5.0, "fill_height_mm": 5.0}
 _NUMERIC_RANGES = {"fill_percentage": (0.0, 100.0), "fill_height_mm": (0.0, None), "container_capacity_ml": (0.0, None)}
 _ORDINAL_TASKS = {"fill_level_ordinal"}
-_ORDINAL_VALUE = {"EMPTY": 0, "LOW": 1, "MID": 2, "HIGH": 3}
+_ORDINAL_VALUE = {"0_PERCENT": 0, "33_PERCENT": 1, "50_PERCENT": 2, "66_PERCENT": 3, "100_PERCENT": 4, "OPAQUE": 5}
 _CLASSIFICATION_TASKS = {
     "tip_presence",
     "container_type",
@@ -60,7 +60,6 @@ _CLASSIFICATION_TASKS = {
     "liquid_color",
     "multiphase_material_presence",
     "container_capacity_bin",
-    "container_content_bin",
     "liquid_transfer_feasibility",
 }
 _POSITIVE_CLASS_TASKS = {"multiphase_material_presence": "YES"}
@@ -1108,7 +1107,6 @@ def primary_metric_for_task(task: str) -> str:
         "highlighted_region_type",
         "liquid_color",
         "container_capacity_bin",
-        "container_content_bin",
         "liquid_transfer_feasibility",
     }:
         return "macro_f1"

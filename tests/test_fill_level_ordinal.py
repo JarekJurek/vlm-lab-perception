@@ -11,16 +11,18 @@ from tlg.annotations import discretize_fill_level_ordinal
 
 
 class FillLevelOrdinalTest(unittest.TestCase):
-    def test_default_thresholds_use_four_classes(self) -> None:
+    def test_default_thresholds_use_percent_bins(self) -> None:
         cases = [
-            (0.0, "EMPTY"),
-            (1.0, "EMPTY"),
-            (1.1, "LOW"),
-            (49.9, "LOW"),
-            (50.0, "MID"),
-            (74.9, "MID"),
-            (75.0, "HIGH"),
-            (100.0, "HIGH"),
+            (0.0, "0_percent"),
+            (1.0, "0_percent"),
+            (1.1, "33_percent"),
+            (41.4, "33_percent"),
+            (41.5, "50_percent"),
+            (57.9, "50_percent"),
+            (58.0, "66_percent"),
+            (82.9, "66_percent"),
+            (83.0, "100_percent"),
+            (100.0, "100_percent"),
         ]
 
         for fill_percentage, expected in cases:
@@ -30,11 +32,11 @@ class FillLevelOrdinalTest(unittest.TestCase):
     def test_glasses_empty_threshold_can_match_dataset_semantics(self) -> None:
         self.assertEqual(
             discretize_fill_level_ordinal(24.2, empty_threshold=25.0),
-            "EMPTY",
+            "0_percent",
         )
         self.assertEqual(
             discretize_fill_level_ordinal(25.1, empty_threshold=25.0),
-            "LOW",
+            "33_percent",
         )
 
 

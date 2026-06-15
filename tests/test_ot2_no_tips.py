@@ -34,7 +34,7 @@ class OT2NoTipsTest(unittest.TestCase):
 
             self.assertIn("fill_level_ordinal", tasks)
             ordinal_ann = sample["annotations"][tasks.index("fill_level_ordinal")]
-            self.assertEqual(ordinal_ann.answer, "MID")
+            self.assertEqual(ordinal_ann.answer, "50_percent")
 
     def test_no_tips_images_emit_only_tip_presence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

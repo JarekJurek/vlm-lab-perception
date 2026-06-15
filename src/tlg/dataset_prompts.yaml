@@ -76,14 +76,14 @@ coqe:
   include:
     - container_capacity_ml
     - container_capacity_bin
-    - container_content_bin
+    - fill_level_ordinal
     - liquid_transfer_feasibility
   task_prompt_prefixes:
     container_capacity_ml:
       - target_region_bbox_prompt
     container_capacity_bin:
       - target_region_bbox_prompt
-    container_content_bin:
+    fill_level_ordinal:
       - target_region_bbox_prompt
     liquid_transfer_feasibility:
       - source_target_bbox_prompt

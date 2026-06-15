@@ -57,7 +57,7 @@ COQE_TASKS = ("volume", "content", "comparative", "pouring")
 COQE_TLG_TASKS = (
     "container_capacity_ml",
     "container_capacity_bin",
-    "container_content_bin",
+    "fill_level_ordinal",
     "liquid_transfer_feasibility",
 )
 _POUR_TIMESTEP_KEYS = ("t0_content", "t1_content", "t2_content", "t3_content", "t4_content")
@@ -390,7 +390,7 @@ class COQEDataset:
             metadata["bbox_xyxy"] = list(record.bbox_xyxy)
             metadata["volume_continuous"] = float(record.volume_continuous)
             metadata["volume_discrete"] = record.volume_class
-        elif task == "container_content_bin":
+        elif task == "fill_level_ordinal":
             answer = record.content_label
             metadata["bbox_xyxy"] = list(record.bbox_xyxy)
             metadata["content_class"] = record.content_class

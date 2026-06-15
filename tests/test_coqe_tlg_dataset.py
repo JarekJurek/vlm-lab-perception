@@ -26,7 +26,7 @@ class COQEDatasetTest(unittest.TestCase):
                 {
                     "container_capacity_ml": 2,
                     "container_capacity_bin": 2,
-                    "container_content_bin": 2,
+                    "fill_level_ordinal": 2,
                     "liquid_transfer_feasibility": 2,
                 },
             )
@@ -56,10 +56,11 @@ class COQEDatasetTest(unittest.TestCase):
             self.assertAlmostEqual(numeric["abs_error"], 5.0)
             self.assertEqual(primary_metric_for_task("container_capacity_ml"), "mae")
 
-            categorical = score_prediction(annotations["container_content_bin"], "33_percent")
-            self.assertTrue(categorical["valid"])
-            self.assertTrue(categorical["correct"])
-            self.assertEqual(primary_metric_for_task("container_content_bin"), "macro_f1")
+            ordinal = score_prediction(annotations["fill_level_ordinal"], "33_percent")
+            self.assertTrue(ordinal["valid"])
+            self.assertTrue(ordinal["correct"])
+            self.assertEqual(ordinal["ordinal_abs_error"], 0)
+            self.assertEqual(primary_metric_for_task("fill_level_ordinal"), "ordinal_mae")
 
 
 def _make_coqe_root(base: Path) -> Path:

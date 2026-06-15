@@ -65,12 +65,12 @@ class GlassesDatasetTest(unittest.TestCase):
             self.assertEqual(below["fill_percentage"].answer, 0.0)
             self.assertEqual(below["fill_percentage"].metadata["raw_derived_fill_percentage"], 20.0)
             self.assertEqual(below["fill_percentage"].metadata["derived_fill_percentage"], 0.0)
-            self.assertEqual(below["fill_level_ordinal"].answer, "EMPTY")
+            self.assertEqual(below["fill_level_ordinal"].answer, "0_percent")
 
             self.assertEqual(above["fill_percentage"].answer, 22.0)
             self.assertEqual(above["fill_percentage"].metadata["raw_derived_fill_percentage"], 22.0)
             self.assertEqual(above["fill_percentage"].metadata["derived_fill_percentage"], 22.0)
-            self.assertEqual(above["fill_level_ordinal"].answer, "LOW")
+            self.assertEqual(above["fill_level_ordinal"].answer, "33_percent")
 
 
 def _keypoints(*, fluid_y: float) -> list[float]:

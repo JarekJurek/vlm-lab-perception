@@ -67,8 +67,8 @@ class TaskMetricsTest(unittest.TestCase):
 
     def test_ordinal_reports_distance_metrics(self) -> None:
         stats = TaskStats()
-        choices = ["EMPTY", "LOW", "MID", "HIGH"]
-        for gt, pred in (("MID", "HIGH"), ("HIGH", "LOW")):
+        choices = ["0_percent", "33_percent", "50_percent", "66_percent", "100_percent", "opaque"]
+        for gt, pred in (("50_percent", "66_percent"), ("100_percent", "50_percent")):
             stats.update_from_record(score_prediction(_ann("fill_level_ordinal", gt, choices), pred))
 
         out = stats.to_dict()

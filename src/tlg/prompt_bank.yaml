@@ -34,11 +34,11 @@ fill_level_ordinal:
     You are analyzing a laboratory image of a liquid container.
 
     Your task is to classify the liquid fill level using one ordinal category.
-    Choose EMPTY when no liquid is visible, LOW for less than half full, MID for approximately half to three-quarters full, and HIGH when the usable container volume appears mostly or completely filled.
+    Use visible cues such as the liquid surface line, color change, transparency, reflections, and container opacity. If the container is opaque and the amount of liquid inside cannot be visually estimated, choose opaque.
 
-    Options: EMPTY, LOW, MID, HIGH.
+    Options: 0_percent, 33_percent, 50_percent, 66_percent, 100_percent, opaque.
     Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
-  choices: ["EMPTY", "LOW", "MID", "HIGH"]
+  choices: ["0_percent", "33_percent", "50_percent", "66_percent", "100_percent", "opaque"]
 
 container_type:
   task_type: "Container Type Recognition (classification)"
@@ -107,18 +107,6 @@ container_capacity_bin:
     Options: 0_50_ml, 50_100_ml, 100_200_ml, 200_300_ml, 300_500_ml, 500_750_ml, 750_1000_ml, 1000_2000_ml, 2000_3000_ml, 3000_inf_ml.
     Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
   choices: ["0_50_ml", "50_100_ml", "100_200_ml", "200_300_ml", "300_500_ml", "500_750_ml", "750_1000_ml", "1000_2000_ml", "2000_3000_ml", "3000_inf_ml"]
-
-container_content_bin:
-  task_type: "Container Content Estimation (classification)"
-  question: |
-    You are analyzing an image of a liquid container.
-
-    Your task is to classify how full the marked container is as a fraction of its total capacity.
-    Use visible cues such as the liquid surface line, color change, transparency, reflections, and container opacity. If the container is opaque and the amount of liquid inside cannot be visually estimated, choose opaque.
-
-    Options: 0_percent, 33_percent, 50_percent, 66_percent, 100_percent, opaque.
-    Output format: only the exact option text. Do not include explanations, punctuation, units, or extra words.
-  choices: ["0_percent", "33_percent", "50_percent", "66_percent", "100_percent", "opaque"]
 
 liquid_transfer_feasibility:
   task_type: "Liquid Transfer Feasibility (classification)"

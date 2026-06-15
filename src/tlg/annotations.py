@@ -111,13 +111,15 @@ def simplify_container_type(container_type: object) -> str:
 
 
 def discretize_fill_level_ordinal(fill_percentage: float, *, empty_threshold: float = 1.0) -> str:
-    """Discretize a 0-100 fill percentage into EMPTY/LOW/MID/HIGH."""
+    """Discretize a 0-100 fill percentage into ordinal percent bins."""
     p = max(0.0, min(100.0, float(fill_percentage)))
     threshold = max(0.0, min(100.0, float(empty_threshold)))
     if p <= threshold:
-        return "EMPTY"
-    if p < 50.0:
-        return "LOW"
-    if p < 75.0:
-        return "MID"
-    return "HIGH"
+        return "0_percent"
+    if p < 41.5:
+        return "33_percent"
+    if p < 58.0:
+        return "50_percent"
+    if p < 83.0:
+        return "66_percent"
+    return "100_percent"
