@@ -9,7 +9,7 @@ from PIL import Image
 from functools import partial
 
 from tlg import PromptBank, TLGAnnotation, make_tlg_annotation, simplify_container_type
-from tlg.annotations import discretize_fill_level_ordinal
+from tlg.annotations import discretize_container_capacity_ml, discretize_fill_level_ordinal
 
 
 _TEXT_KEYS = {
@@ -172,6 +172,28 @@ class LabLiquidVisionDataset:
                         task="fill_level_ordinal",
                         answer=discretize_fill_level_ordinal(fill_percentage),
                         metadata={"derived_fill_percentage": round(fill_percentage, 6)},
+                    )
+                )
+
+        if vol_vessel is not None and vol_vessel > 0:
+            capacity_metadata = {
+                "vol_vessel": vol_vessel,
+                "source": "Input_vol_vessel.txt",
+            }
+            if self._prompt_bank.supports(dataset, "container_capacity_ml"):
+                annotations.append(
+                    add(
+                        task="container_capacity_ml",
+                        answer=float(vol_vessel),
+                        metadata=capacity_metadata,
+                    )
+                )
+            if self._prompt_bank.supports(dataset, "container_capacity_bin"):
+                annotations.append(
+                    add(
+                        task="container_capacity_bin",
+                        answer=discretize_container_capacity_ml(vol_vessel),
+                        metadata=capacity_metadata,
                     )
                 )
 

@@ -10,6 +10,8 @@
 labliquidvision:
   - fill_percentage
   - fill_level_ordinal
+  - container_capacity_ml
+  - container_capacity_bin
   - container_count
   - container_type
   - container_type_simple
