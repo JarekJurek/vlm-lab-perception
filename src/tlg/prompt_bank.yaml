@@ -117,7 +117,7 @@ liquid_transfer_feasibility:
     Estimate how much liquid is currently in the source container, how much free capacity remains in the target container, and whether the source liquid can fit into the target container.
     Choose yes only if all liquid currently in the source container can fit into the remaining empty space of the target container.
     Choose no if it would overflow.
-    Choose cant_tell if at least one relevant container is opaque or the liquid amount cannot be visually estimated.
+    Choose cant_tell if at least one relevant container is opaque, hidden, partially cropped, or the liquid amount/free space is not clearly visible.
 
     Options: yes, no, cant_tell.
     Output format: only the exact option text. Do not include explanations, punctuation, or extra words.
@@ -158,11 +158,13 @@ liquid_grounding:
     Include transparent, colored, or partially occluded liquid if a liquid region or meniscus is visible.
     Do not include container walls, caps, labels, reflections, shadows, foam-only regions, or background objects.
     Use coordinates normalized to the 0-1000 image scale in [x1, y1, x2, y2] format.
+    Coordinates must be integers from 0 to 1000.
     If no liquid is visible, return exactly [].
     Do not invent a box for empty containers, vessel walls, labels, glare, shadows, or foam-only regions.
 
     Output format: only valid JSON. Return either [] or a list in this exact schema:
     [{"bbox_2d":[x1,y1,x2,y2],"label":"Liquid"}]
+    Example output: [{"bbox_2d":[250,330,300,660],"label":"Liquid"}]
 
 highlighted_region_type:
   task_type: "Lab Region Type Recognition (classification)"
