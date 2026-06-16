@@ -43,6 +43,25 @@ class COQEDatasetTest(unittest.TestCase):
             self.assertEqual(transfer.choices, ["yes", "no", "cant_tell"])
             self.assertEqual(len(transfer.metadata["bbox_boxes"]), 2)
 
+    def test_coqe_tlg_dataset_rejects_required_tasks_disabled_by_prompt_bank(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = _make_coqe_root(Path(tmpdir))
+            default_bank = PromptBank.default()
+            prompt_bank = PromptBank(
+                prompt_defs=default_bank.prompt_defs,
+                dataset_assignments={
+                    "coqe": {
+                        "include": ["fill_level_ordinal"],
+                        "task_prompt_prefixes": {
+                            "fill_level_ordinal": ["target_region_bbox_prompt"],
+                        },
+                    },
+                },
+            )
+
+            with self.assertRaisesRegex(KeyError, "container_capacity_bin"):
+                COQEDataset(root, prompt_bank=prompt_bank)
+
     def test_coqe_tasks_use_expected_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = _make_coqe_root(Path(tmpdir))

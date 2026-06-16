@@ -318,6 +318,7 @@ class COQEDataset:
         self.split = self._dataset.split
         self._prompt_bank = prompt_bank or PromptBank.default()
         task_set = _normalize_tlg_tasks(tasks)
+        _validate_prompt_supported_tasks(self._prompt_bank, "coqe", task_set)
 
         entries: List[Tuple[str, COQERecord]] = []
         for task in task_set:
@@ -439,6 +440,16 @@ def _normalize_tlg_tasks(tasks: Sequence[str]) -> Tuple[str, ...]:
     if unknown:
         raise ValueError(f"Unknown COQE TLG task(s): {', '.join(unknown)}")
     return out
+
+
+def _validate_prompt_supported_tasks(prompt_bank: PromptBank, dataset: str, tasks: Sequence[str]) -> None:
+    missing = [task for task in tasks if not prompt_bank.supports(dataset, task)]
+    if missing:
+        raise KeyError(
+            f"COQE prompt assignment does not enable required task(s): {missing}. "
+            "Add them under the 'coqe' include list in the dataset prompts YAML, "
+            "or pass a narrower explicit task list."
+        )
 
 
 def _load_json_list(path: Path) -> List[Dict[str, Any]]:
