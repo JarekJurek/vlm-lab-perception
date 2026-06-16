@@ -56,6 +56,17 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help="LabPics Chemistry split to export. Default: all.",
     )
+    parser.add_argument(
+        "--coqe-split",
+        choices=["train", "val", "test"],
+        default="test",
+        help="COQE split to export. Default: test.",
+    )
+    parser.add_argument(
+        "--dtld-no-occlusion-filter",
+        action="store_true",
+        help="Disable DTLD occlusion filtering for target-object and container-count tasks.",
+    )
     return parser.parse_args()
 
 
@@ -85,7 +96,9 @@ def main() -> None:
                 data_root,
                 prompt_bank=prompt_bank,
                 limit=args.max_samples_per_dataset,
+                coqe_split=str(args.coqe_split),
                 labpics_chemistry_split=str(args.labpics_chemistry_split),
+                dtld_no_occlusion_filter=bool(args.dtld_no_occlusion_filter),
             )
         )
         print(f"  valid samples with annotations: {len(valid_samples)}")
@@ -120,6 +133,9 @@ def main() -> None:
         "train_ratio": float(args.train_ratio),
         "shuffle": bool(args.shuffle),
         "max_samples_per_dataset": args.max_samples_per_dataset,
+        "coqe_split": str(args.coqe_split),
+        "labpics_chemistry_split": str(args.labpics_chemistry_split),
+        "dtld_no_occlusion_filter": bool(args.dtld_no_occlusion_filter),
         "datasets": dataset_counts,
         "samples": samples_out,
     }
@@ -135,14 +151,18 @@ def _iter_valid_samples(
     *,
     prompt_bank: PromptBank,
     limit: Optional[int] = None,
+    coqe_split: str = "test",
     labpics_chemistry_split: str = "all",
+    dtld_no_occlusion_filter: bool = False,
 ):
     yielded = 0
     for dataset in _source_datasets(
         dataset_name,
         data_root,
         prompt_bank=prompt_bank,
+        coqe_split=coqe_split,
         labpics_chemistry_split=labpics_chemistry_split,
+        dtld_no_occlusion_filter=dtld_no_occlusion_filter,
     ):
         for idx in range(len(dataset)):
             try:
@@ -163,7 +183,9 @@ def _source_datasets(
     data_root: Path,
     *,
     prompt_bank: PromptBank,
+    coqe_split: str = "test",
     labpics_chemistry_split: str = "all",
+    dtld_no_occlusion_filter: bool = False,
 ) -> Iterable[Any]:
     return [
         build_dataset(
@@ -173,6 +195,8 @@ def _source_datasets(
             include_depth=False,
             shuffle=False,
             seed=None,
+            dtld_no_occlusion_filter=dtld_no_occlusion_filter,
+            coqe_split=coqe_split,
             labpics_chemistry_split=labpics_chemistry_split,
         )
     ]
