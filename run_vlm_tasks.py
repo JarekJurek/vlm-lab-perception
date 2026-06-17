@@ -138,13 +138,6 @@ def main():
         for model_key in run_hf_model_keys:
             hf_models[model_key] = load_hf_vlm_model(model_key, viz_attn=False)
 
-    pred_out_path = Path(args.predictions_out) if args.predictions_out else None
-    metrics_out_path = Path(args.metrics_out) if args.metrics_out else None
-    pred_fh = None
-    if pred_out_path is not None:
-        pred_out_path.parent.mkdir(parents=True, exist_ok=True)
-        pred_fh = pred_out_path.open("w", encoding="utf-8")
-
     # Per-model stats containers.
     active_model_keys: List[str] = []
     if run_qwen:
@@ -156,6 +149,29 @@ def main():
     per_dataset_stats: Dict[str, Dict[str, Dict[str, TaskStats]]] = {
         key: {} for key in active_model_keys
     }
+
+    resume_pred_path = Path(args.resume_from_predictions) if args.resume_from_predictions else None
+    pred_out_path = Path(args.predictions_out) if args.predictions_out else resume_pred_path
+    metrics_out_path = Path(args.metrics_out) if args.metrics_out else None
+    completed_prediction_tasks: Dict[str, set[str]] = {}
+    if resume_pred_path is not None:
+        completed_prediction_tasks = _load_completed_prediction_tasks(
+            resume_pred_path,
+            active_model_keys=set(active_model_keys),
+        )
+        completed_rows = sum(len(tasks) for tasks in completed_prediction_tasks.values())
+        print(
+            "Resume predictions: "
+            f"{resume_pred_path} ({completed_rows} completed task rows for active model)"
+        )
+    pred_fh = None
+    if pred_out_path is not None and not args.dry_run:
+        pred_out_path.parent.mkdir(parents=True, exist_ok=True)
+        same_resume_output = (
+            resume_pred_path is not None and pred_out_path.resolve() == resume_pred_path.resolve()
+        )
+        mode = "a" if same_resume_output else "w"
+        pred_fh = pred_out_path.open(mode, encoding="utf-8")
 
     for dataset_name in dataset_names:
         print(f"\n{'=' * 60}")
@@ -205,6 +221,14 @@ def main():
             shuffle=bool(args.shuffle),
             seed=int(args.seed),
         )
+        if completed_prediction_tasks:
+            indices, skipped_completed = _filter_completed_indices(
+                dataset,
+                indices,
+                completed_prediction_tasks,
+            )
+            if skipped_completed:
+                print(f"Resume skip: {skipped_completed} already-computed samples.")
         selected_task_counts = _primary_task_counts(dataset, indices) if task_pool_counts else {}
         if selected_task_counts:
             print(f"Selected samples: {len(indices)} total ({_format_counts(selected_task_counts)})")
@@ -558,6 +582,87 @@ def _attach_precomputed_depth_map(sample: Dict[str, Any], dataset_name: str, dep
         raise FileNotFoundError(f"Precomputed depth map not found: {depth_path}")
     sample["depth_map"] = np.load(depth_path)
     sample["depth_map_path"] = depth_path
+
+
+def _load_completed_prediction_tasks(
+    path: Path,
+    *,
+    active_model_keys: set[str],
+) -> Dict[str, set[str]]:
+    """Read an existing predictions JSONL and return completed tasks by sample ID."""
+    if not path.exists():
+        print(f"Resume predictions file does not exist yet: {path}")
+        return {}
+
+    completed: Dict[str, set[str]] = {}
+    bad_lines = 0
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                bad_lines += 1
+                continue
+            if not isinstance(row, dict):
+                continue
+            model = str(row.get("model", ""))
+            if active_model_keys and model and model not in active_model_keys:
+                continue
+            sample_id = row.get("sample_id")
+            if sample_id is None:
+                continue
+            task = row.get("task")
+            completed.setdefault(str(sample_id), set()).add(
+                str(task) if task is not None else "__all__"
+            )
+
+    if bad_lines:
+        print(f"Warning: ignored {bad_lines} invalid JSONL line(s) while reading {path}")
+    return completed
+
+
+def _filter_completed_indices(
+    dataset,
+    indices: List[int],
+    completed_prediction_tasks: Dict[str, set[str]],
+) -> Tuple[List[int], int]:
+    remaining: List[int] = []
+    skipped = 0
+    for i in indices:
+        try:
+            sample = dataset[i]
+        except (FileNotFoundError, OSError, SyntaxError):
+            remaining.append(i)
+            continue
+        sample_id = str(sample.get("id", "unknown")) if isinstance(sample, dict) else "unknown"
+        existing_tasks = completed_prediction_tasks.get(sample_id, set())
+        expected_tasks = _sample_annotation_tasks(sample) if isinstance(sample, dict) else set()
+        if "__all__" in existing_tasks or (
+            expected_tasks and expected_tasks.issubset(existing_tasks)
+        ):
+            skipped += 1
+            continue
+        remaining.append(i)
+    return remaining, skipped
+
+
+def _sample_annotation_tasks(sample: Dict[str, Any]) -> set[str]:
+    annotations = sample.get("annotations")
+    if not isinstance(annotations, list):
+        return set()
+    tasks: set[str] = set()
+    for ann in annotations:
+        metadata = getattr(ann, "metadata", None)
+        if isinstance(metadata, dict) and metadata.get("task") is not None:
+            tasks.add(str(metadata["task"]))
+        else:
+            task_type = getattr(ann, "task_type", None)
+            if task_type is not None:
+                tasks.add(str(task_type))
+    return tasks
 
 
 def _precomputed_depth_path(sample: Dict[str, Any], dataset_name: str, depth_dir: Path) -> Path:

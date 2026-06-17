@@ -103,6 +103,16 @@ def parse_args() -> argparse.Namespace:
         help="Optional path to write per-task JSONL predictions with ground truth.",
     )
     parser.add_argument(
+        "--resume-from-predictions",
+        type=str,
+        default="",
+        help=(
+            "Optional existing predictions JSONL. Samples already present for the active "
+            "model are skipped. If --predictions-out is omitted, new predictions are "
+            "appended to this file."
+        ),
+    )
+    parser.add_argument(
         "--metrics-out",
         type=str,
         default="",
