@@ -8,7 +8,8 @@ The project is currently organized around three practical workflows:
 
 1. run the current dataset loaders directly with `run_vlm_tasks.py`;
 2. export a reproducible JSON manifest and evaluate from that manifest;
-3. run the standalone COQE/Qwen experiment when you need the original
+3. run the manifest through VLMEvalKit-compatible model wrappers;
+4. run the standalone COQE/Qwen experiment when you need the original
    COQE-style task framing.
 
 The root runner supports Qwen3-VL, SD-VLM, and several open Hugging Face VLMs.
@@ -21,6 +22,12 @@ Install the Python dependencies from the repository root:
 
 ```bash
 pip install -r requirements.txt
+```
+
+For the VLMEvalKit runner, install the extra evaluation stack:
+
+```bash
+pip install -r requirements-vlmevalkit.txt
 ```
 
 Run a loader-only validation pass before loading a model:
@@ -194,6 +201,55 @@ Manifest export defaults to all datasets configured in
 `src/tlg/dataset_prompts.yaml`. It uses the current dataloaders, skips samples
 without standardized annotations, and supports `--labpics-chemistry-split` for
 LabPics Chemistry source selection.
+
+## VLMEvalKit Workflow
+
+The manifest benchmark can also be run through a
+[VLMEvalKit](https://github.com/open-compass/VLMEvalKit)-compatible adapter.
+This keeps TLG's existing prompts, parsers, and metrics while using VLMEvalKit
+model wrappers for inference.
+
+Dry-run the flattened manifest rows and prompt construction:
+
+```bash
+python scripts/run_tlg_vlmeval.py \
+    --manifest manifests/tlg_all_seed42.json \
+    --manifest-split test \
+    --datasets labliquidvision \
+    --max-samples 5 \
+    --dump-rows-out results/tlg_vlmeval/labliquidvision_rows.jsonl \
+    --dry-run
+```
+
+Run a VLMEvalKit model key and write current-compatible outputs:
+
+```bash
+python scripts/run_tlg_vlmeval.py \
+    --manifest manifests/tlg_all_seed42.json \
+    --manifest-split test \
+    --datasets labliquidvision \
+    --model Qwen2-VL-7B-Instruct \
+    --work-dir results/tlg_vlmeval
+```
+
+The runner writes raw VLMEvalKit-style rows to
+`results/tlg_vlmeval/{model}/vlmeval_predictions.jsonl`, plus compatibility
+files at `preds.jsonl` and `metrics.json`. Use `--resume` to append only missing
+raw predictions. To rescore an existing VLMEvalKit table without running a
+model, pass `--predictions-in path/to/predictions.jsonl|csv|tsv|xlsx`.
+
+On the LSF cluster, first run the CPU-side implementation check:
+
+```bash
+bsub < hpc_scripts/check_tlg_vlmevalkit.sh
+```
+
+Then run a small GPU smoke job:
+
+```bash
+MODEL=Qwen2-VL-7B-Instruct DATASET=labliquidvision TASK=container_count MAX_SAMPLES=5 \
+    bsub < hpc_scripts/run_tlg_vlmevalkit_smoke.sh
+```
 
 ## SD-VLM
 
@@ -388,12 +444,13 @@ Additional datasets under discussion or experimental development:
 ```text
 run_vlm_tasks.py                  Main VLM evaluator
 scripts/export_tlg_manifest.py    Export reproducible manifest JSON
+scripts/run_tlg_vlmeval.py        VLMEvalKit-compatible manifest runner
 scripts/precompute_*_depth.py      Depth precomputation helpers
 scripts/calculate_*               Analysis helpers
 src/tlg/                           Prompts, evaluation, runners, manifests
 src/datasets/                      Dataset loaders and sync helpers
 src/experimental/coqe/             Standalone COQE/Qwen experiment
-hpc_scripts/                       LSF job templates
+hpc_scripts/                       LSF job templates and VLMEvalKit smoke checks
 notebooks/                         Dataset preview notebooks
 tests/                             Unit and integration-style smoke tests
 ```
@@ -409,7 +466,7 @@ python -m unittest discover tests
 Run focused tests while changing runner behavior:
 
 ```bash
-python -m unittest tests.test_labliquidvision_dry_run tests.test_manifest
+python -m unittest tests.test_labliquidvision_dry_run tests.test_manifest tests.test_vlmevalkit_adapter
 ```
 
 The tests construct small synthetic datasets where possible, so they are useful
