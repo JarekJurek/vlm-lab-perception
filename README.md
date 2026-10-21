@@ -1,8 +1,33 @@
 # TLG: Transparent Liquid Gauge
 
-TLG is a codebase for evaluating vision-language models on transparent liquid
-perception tasks: fill level estimation, container recognition, counting,
-liquid grounding, material reasoning, and temporal pouring order.
+TLG is a benchmark and evaluation framework for testing how well
+vision-language models (VLMs) perceive transparent liquids and the containers
+that hold them. Liquids in glass, plastic, and laboratory vessels are among
+the hardest things for general-purpose VLMs to read: their boundaries are faint
+and refracted, they pick up reflections, and they are often partly occluded or
+mixed with other materials. Yet reading them correctly matters for lab
+automation, robotic pouring, and assistive perception.
+
+The project does not collect new data. It takes existing datasets (LabLiquidVision,
+Glasses in the Wild, DTLD, LabPics Chemistry, Pouring, OT2, and COQE) and
+converts their heterogeneous labels into one standardized annotation format
+(`TLGAnnotation`). Each annotation is paired with a prompt from a configurable
+prompt bank, which turns the dataset into image-plus-question VQA tasks. A task
+is only generated when the source dataset has reliable supervision for it. The
+tasks cover:
+
+- **fill level**: percentage, ordinal level, and height in mm;
+- **container understanding**: counting, type recognition, and capacity;
+- **appearance**: liquid color and tip presence;
+- **grounding**: localizing the liquid region;
+- **materials**: material and multiphase reasoning;
+- **temporal order**: ordering pouring frames chronologically.
+
+Model outputs are parsed and scored per task. The metrics are parse rate,
+exact/category accuracy, multi-label scores, grounding scores, mean absolute
+error, and within-tolerance accuracy for numeric targets. This gives a
+consistent way to compare models, such as Qwen3-VL, SD-VLM, InternVL, and
+LLaVA-OneVision, across datasets and tasks.
 
 The project is currently organized around three practical workflows:
 
